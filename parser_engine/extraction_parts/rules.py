@@ -9,6 +9,16 @@ class DerivedRulesMixin:
     def _apply_derived_fields(
         self, records: list[dict[str, Any]], derived_fields: dict[str, Any]
     ) -> None:
+        """按 YAML 声明的顺序为每条土层记录计算派生字段。
+
+        Args:
+            records: 待补充派生参数的土层记录。
+            derived_fields: derived_fields 配置字典。
+
+        Notes:
+            规则按配置顺序执行并采用首条命中项；顺序本身就是业务优先级。
+            only_when_missing 与 only_when_all_missing 用于保护报告原值。
+        """
         # 规则按配置顺序执行并采用首条命中项；顺序就是业务优先级。
         for record in records:
             for field_name, field_config in derived_fields.items():
@@ -67,6 +77,15 @@ class DerivedRulesMixin:
     def _evaluate_formula(
         record: dict[str, Any], formula: dict[str, Any]
     ) -> float | None:
+        """计算配置声明的简单两字段四则运算。
+
+        Args:
+            record: 当前土层记录。
+            formula: 包含 left、right、operator、precision 的公式配置。
+
+        Returns:
+            计算后的数值；输入缺失、类型不合法或除零时返回 None。
+        """
         left_field = formula.get("left")
         right_field = formula.get("right")
         if not isinstance(left_field, str) or not isinstance(right_field, str):
@@ -93,6 +112,18 @@ class DerivedRulesMixin:
     def _condition_matches(
         record: dict[str, Any], condition: dict[str, Any]
     ) -> bool:
+        """判断当前土层记录是否命中一条配置化条件。
+
+        Args:
+            record: 当前土层记录。
+            condition: 支持 all/any、contains_any、not_contains_any 及数值比较。
+
+        Returns:
+            条件命中返回 True，否则返回 False。
+
+        Notes:
+            主字段为空时会按既有逻辑回退读取同名 *_recommended 字段。
+        """
         if "all" in condition:
             return all(
                 DerivedRulesMixin._condition_matches(record, item)

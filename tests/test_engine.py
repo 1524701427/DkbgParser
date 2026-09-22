@@ -1602,7 +1602,23 @@ def test_liquefied_fine_sand_uses_prd_bearing_correction_coefficients():
     engine = ExtractionEngine.from_files("configs/layer_thickness.yaml")
     record = {
         "layer_name": "粉砂",
+        "liquefaction_is_liquefied": True,
         "liquefaction_reduction_coefficient": 0.666667,
+    }
+
+    engine._apply_derived_fields([record], engine.configs[0]["derived_fields"])
+
+    assert record["width_bearing_coefficient"] == 0
+    assert record["depth_bearing_coefficient"] == 1.0
+
+
+def test_liquefied_fine_sand_with_reduction_factor_one_still_uses_zero_one():
+    """验证已液化但折减系数恰好为1时，ηb/ηd仍按液化规则取0/1。"""
+    engine = ExtractionEngine.from_files("configs/layer_thickness.yaml")
+    record = {
+        "layer_name": "细砂",
+        "liquefaction_is_liquefied": True,
+        "liquefaction_reduction_coefficient": 1.0,
     }
 
     engine._apply_derived_fields([record], engine.configs[0]["derived_fields"])
@@ -1616,6 +1632,7 @@ def test_non_liquefied_fine_sand_keeps_original_bearing_correction_coefficients(
     engine = ExtractionEngine.from_files("configs/layer_thickness.yaml")
     record = {
         "layer_name": "细砂",
+        "liquefaction_is_liquefied": False,
         "liquefaction_reduction_coefficient": 1.0,
     }
 
@@ -2172,6 +2189,77 @@ def test_borehole_aggregation_keeps_source_and_governing_ids():
 
     assert result["borehole_ids"] == ["F03", "F10"]
     assert result["governing_borehole_ids"] == ["F03"]
+
+
+def test_borehole_aggregation_excludes_depth_validation_failures():
+    """验证深度校验失败的 OCR 厚度保留追溯，但不参与平均值。"""
+    records = [
+        {
+            "layer_code": "①",
+            "main_layer_code": "①",
+            "layer_name": "粉质黏土",
+            "image_thickness": 2.0,
+            "depth_validation": True,
+            "borehole_id": "F01",
+            "evidence": {"page": 10},
+        },
+        {
+            "layer_code": "①",
+            "main_layer_code": "①",
+            "layer_name": "粉质黏土",
+            "image_thickness": 20.0,
+            "depth_validation": False,
+            "borehole_id": "F02",
+            "evidence": {"page": 11},
+        },
+    ]
+
+    result = BoreholeImageRecognizer._aggregate(records, "average")[0]
+
+    assert result["image_average"] == 2.0
+    assert result["observation_count"] == 1
+    assert result["borehole_ids"] == ["F01"]
+    assert len(result["observations"]) == 2
+
+
+@pytest.mark.parametrize(("operator", "expected"), [("minimum", 2.0), ("maximum", 3.0)])
+def test_borehole_aggregation_excludes_invalid_values_for_min_and_max(
+    operator: str,
+    expected: float,
+):
+    """验证深度校验失败值不会污染最小值或最大值。"""
+    records = [
+        {
+            "layer_code": "①",
+            "main_layer_code": "①",
+            "image_thickness": 2.0,
+            "depth_validation": True,
+            "borehole_id": "F01",
+            "evidence": {"page": 10},
+        },
+        {
+            "layer_code": "①",
+            "main_layer_code": "①",
+            "image_thickness": 3.0,
+            "depth_validation": True,
+            "borehole_id": "F02",
+            "evidence": {"page": 11},
+        },
+        {
+            "layer_code": "①",
+            "main_layer_code": "①",
+            "image_thickness": 99.0 if operator == "maximum" else 0.1,
+            "depth_validation": False,
+            "borehole_id": "F03",
+            "evidence": {"page": 12},
+        },
+    ]
+
+    result = BoreholeImageRecognizer._aggregate(records, operator)[0]
+
+    assert result["image_average"] == expected
+    assert result["observation_count"] == 2
+    assert "F03" not in result["borehole_ids"]
 
 
 def test_image_fallback_detects_partial_layer_results():

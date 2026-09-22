@@ -15,6 +15,16 @@ class BoreholeAggregationMixin:
         page: int,
         image_path: Path,
     ) -> list[dict[str, Any]]:
+        """把单页视觉识别结果转换为统一钻孔观测记录。
+
+        Args:
+            result: 视觉/OCR 客户端返回的结构化结果。
+            page: 原报告页码。
+            image_path: 当前识别图片路径。
+
+        Returns:
+            标准化后的逐层观测记录列表。
+        """
         borehole_id = result.get("borehole_id")
         records = []
         for layer in result.get("layers", []):
@@ -54,6 +64,16 @@ class BoreholeAggregationMixin:
     def _validate_observations(
         records: list[dict[str, Any]], tolerance: float
     ) -> None:
+        """按同一钻孔的相邻层底深度校验或补充分层厚度。
+
+        Args:
+            records: 多个钻孔的逐层观测记录。
+            tolerance: 层底深度差与 OCR 厚度允许的误差，单位为 m。
+
+        Notes:
+            校验必须在同一钻孔内部进行。明确校验失败的记录会标记
+            depth_validation=False，后续聚合保留明细但不参与统计。
+        """
         groups: dict[Any, list[dict[str, Any]]] = defaultdict(list)
         for record in records:
             evidence = record.get("evidence", {})
@@ -80,6 +100,19 @@ class BoreholeAggregationMixin:
     def _aggregate(
         records: list[dict[str, Any]], operator: str
     ) -> list[dict[str, Any]]:
+        """按完整层号汇总多个钻孔的有效厚度观测。
+
+        Args:
+            records: 全部钻孔逐层观测。
+            operator: 聚合方式，支持 average、minimum、maximum。
+
+        Returns:
+            每个完整层号对应的一条聚合记录。
+
+        Notes:
+            depth_validation=False 的观测继续保留在 observations 中用于追溯，
+            但不会参与平均值、最小值或最大值计算。
+        """
         groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for record in records:
             groups[str(record["layer_code"])].append(record)
@@ -152,6 +185,7 @@ class BoreholeAggregationMixin:
 
     @staticmethod
     def _borehole_sort_key(value: str) -> tuple[str, int, str]:
+        """生成钻孔编号的自然排序键，例如 F2 排在 F10 前。"""
         match = re.fullmatch(r"([A-Za-z]+)0*(\d+)", value.strip())
         if not match:
             return value.upper(), -1, value
@@ -159,6 +193,7 @@ class BoreholeAggregationMixin:
 
     @staticmethod
     def _main_layer_code(code: str) -> str:
+        """从完整层号中提取主层号，例如 ④-1 返回 ④。"""
         match = re.match(
             r"([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]|\d+)",
             code,
@@ -167,6 +202,7 @@ class BoreholeAggregationMixin:
 
     @staticmethod
     def _number(value: Any) -> float | None:
+        """从数字或带单位文本中提取第一个浮点数，无法识别时返回 None。"""
         if value is None:
             return None
         match = re.search(r"-?\d+(?:\.\d+)?", str(value))
@@ -174,6 +210,7 @@ class BoreholeAggregationMixin:
 
     @staticmethod
     def _default_prompt() -> str:
+        """返回钻孔柱状图结构化识别的默认提示词。"""
         return """识别图片中的钻孔柱状图，只返回一个 JSON 对象，不要返回 Markdown。
 JSON 格式：
 {"borehole_id":"钻孔编号", "layers":[{"layer_code":"层号", "layer_name":"岩土名称", "bottom_elevation":数值或null, "bottom_depth":数值或null, "thickness":数值或null, "description":"岩性描述", "confidence":0到1}]}

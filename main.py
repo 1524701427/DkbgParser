@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +16,7 @@ from parser_engine import (
     post_reverse_geology_payload,
     write_reverse_geology_payload,
 )
+from parser_engine.logging_utils import configure_logging, log_stage
 
 
 # 项目根目录。所有相对路径均以该目录为基准解析。
@@ -100,23 +100,9 @@ def _resolve_project_path(path: str | Path) -> Path:
     return resolved_path.resolve()
 
 
-def _configure_logging() -> None:
-    """初始化控制台日志，并尽量统一标准输出编码为 UTF-8。
-
-    Windows 在输出重定向场景下可能使用 GBK，因此保留原逻辑，对支持
-    ``reconfigure`` 的标准流显式设置 UTF-8，避免中文日志乱码。
-    """
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8")
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        stream=sys.stdout,
-        force=True,
-    )
+def _configure_logging(log_path: Path | None = None) -> None:
+    """初始化控制台与文件日志。"""
+    configure_logging(log_path)
 
 
 def _build_output_paths(input_path: Path, output_dir: Path) -> tuple[Path, Path, Path, Path]:
@@ -444,11 +430,13 @@ def main(
         callback_output_path,
     ) = _build_output_paths(input_path, output_dir)
 
-    _configure_logging()
+    log_path = output_dir / "logs" / f"{input_path.stem}.log"
+    _configure_logging(log_path)
 
     try:
         logger.info("程序启动")
         logger.info("输入文件：%s", input_path)
+        logger.info("日志文件：%s", log_path)
         logger.info(
             "PDF 后端：%s；OCR 兜底：%s",
             pdf_backend,
@@ -459,27 +447,29 @@ def main(
         # 重复识别图片；这里只负责按原开关决定是否构造识别器。
         recognizer = _build_image_recognizer(enable_ocr, output_dir)
 
-        result = extract_document(
-            input_path=input_path,
-            config_paths=list(CONFIG_PATHS),
-            pdf_backend=pdf_backend,
-            output_path=output_path,
-            details_output_path=details_output_path,
-            field_descriptions_output_path=fields_output_path,
-            image_recognizer=recognizer,
-        )
+        with log_stage(logger, "文档解析与业务抽取"):
+            result = extract_document(
+                input_path=input_path,
+                config_paths=list(CONFIG_PATHS),
+                pdf_backend=pdf_backend,
+                output_path=output_path,
+                details_output_path=details_output_path,
+                field_descriptions_output_path=fields_output_path,
+                image_recognizer=recognizer,
+            )
 
         # 精简业务结果与查询明细保持职责分离。接口映射继续读取 result.json，
         # 避免误用 extract_document 返回的完整查询明细结构。
-        callback_payload = write_reverse_geology_payload(
-            output_path,
-            callback_output_path,
-            project_id=project_id,
-            geology_id=geology_id,
-            layer_ids=layer_ids,
-            handle_keyword_codes=handle_keyword_codes,
-            ambiguous_corrosion_code=ambiguous_corrosion_code,
-        )
+        with log_stage(logger, "接口字段映射"):
+            callback_payload = write_reverse_geology_payload(
+                output_path,
+                callback_output_path,
+                project_id=project_id,
+                geology_id=geology_id,
+                layer_ids=layer_ids,
+                handle_keyword_codes=handle_keyword_codes,
+                ambiguous_corrosion_code=ambiguous_corrosion_code,
+            )
 
         _log_prd_summary(result)
         logger.info("精简结果：%s", output_path)
@@ -490,12 +480,18 @@ def main(
         _log_mapping_warnings(output_path, callback_payload)
 
         if send_callback:
-            logger.info("发送逆向地质接口：%s", callback_url)
-            callback_response = post_reverse_geology_payload(
-                callback_payload,
-                api_url=callback_url,
-                timeout=callback_timeout,
+            logger.info(
+                "接口请求准备：url=%s，顶层字段=%d，土层数=%d",
+                callback_url,
+                len(callback_payload),
+                len(callback_payload.get("geologyRockSoilsReq") or []),
             )
+            with log_stage(logger, "逆向地质接口POST"):
+                callback_response = post_reverse_geology_payload(
+                    callback_payload,
+                    api_url=callback_url,
+                    timeout=callback_timeout,
+                )
             logger.info(
                 "逆向地质接口响应：%s",
                 json.dumps(callback_response, ensure_ascii=False)

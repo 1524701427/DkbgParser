@@ -14,6 +14,14 @@ class ExtractionConfigMixin:
 
     @classmethod
     def _validate_config(cls, config: dict[str, Any]) -> None:
+        """校验单个抽取任务配置的结构与正则表达式。
+
+        Args:
+            config: 已从 YAML 读取的任务配置。
+
+        Raises:
+            ValueError: 缺少任务名、模式不支持、必填结构缺失或正则不合法。
+        """
         name = str(config.get("name") or "").strip()
         if not name:
             raise ValueError("抽取配置缺少 name")
@@ -55,6 +63,13 @@ class ExtractionConfigMixin:
     def _validate_regex_values(
         cls, value: Any, config_name: str, path: str = ""
     ) -> None:
+        """递归检查配置树中的 pattern/patterns 正则项。
+
+        Args:
+            value: 当前待遍历的配置节点。
+            config_name: 所属任务名称，用于错误信息。
+            path: 当前节点的点分路径。
+        """
         if isinstance(value, dict):
             for key, child in value.items():
                 child_path = f"{path}.{key}" if path else str(key)
@@ -73,6 +88,16 @@ class ExtractionConfigMixin:
 
     @staticmethod
     def _compile_config_pattern(pattern: str, config_name: str, path: str) -> None:
+        """预编译单个配置正则并转换为易定位的配置错误。
+
+        Args:
+            pattern: 正则表达式。
+            config_name: 所属任务名称。
+            path: 正则在配置中的位置。
+
+        Raises:
+            ValueError: 正则表达式语法错误。
+        """
         try:
             re.compile(pattern)
         except re.error as exc:
@@ -87,7 +112,18 @@ class ExtractionConfigMixin:
         *,
         image_recognizer: Any | None = None,
     ):
-        """从一个或多个 YAML 文件创建抽取引擎。"""
+        """从一个或多个 YAML 文件创建抽取引擎。
+
+        Args:
+            config_paths: 单个配置路径或配置路径集合。
+            image_recognizer: 可选的图片/OCR 识别器。
+
+        Returns:
+            使用当前类构造出的抽取引擎实例。
+
+        Raises:
+            ValueError: 配置为空、缺少 name 或任务名重复。
+        """
         if isinstance(config_paths, (str, Path)):
             paths = [Path(config_paths)]
         else:

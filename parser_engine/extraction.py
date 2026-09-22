@@ -8,20 +8,26 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Iterable
 
-import yaml
-
 from .engine import DocumentParser, ParserConfig
 from .models import DocumentBlock, DocumentModel
+from .extraction_parts.business import (
+    infer_foundation_type,
+    merge_first_cultivated_soil_layer,
+    select_foundation_parameter,
+)
+from .extraction_parts.config import ExtractionConfigMixin
+from .extraction_parts.rules import DerivedRulesMixin
 
 
 logger = logging.getLogger(__name__)
 
 
-class ExtractionEngine:
-    """读取 YAML 配置并对统一文档模型执行公共抽取流程。"""
+class ExtractionEngine(ExtractionConfigMixin, DerivedRulesMixin):
+    """读取 YAML 配置并对统一文档模型执行公共抽取流程。
 
-    # 公共抽取模式集中维护，避免校验逻辑中重复硬编码。
-    _SUPPORTED_MODES = frozenset({"layer_records", "keyword_fields", "section_content"})
+    配置加载/校验与派生规则执行分别由 mixin 提供，本类只保留抽取流程编排和
+    文档结构处理，外部公开 API 保持不变。
+    """
 
     def __init__(self, configs: list[dict[str, Any]], image_recognizer: Any | None = None) -> None:
         """初始化抽取引擎。
@@ -34,140 +40,6 @@ class ExtractionEngine:
             self._validate_config(config)
         self.configs = configs
         self.image_recognizer = image_recognizer
-
-    @classmethod
-    def _validate_config(cls, config: dict[str, Any]) -> None:
-        """校验抽取配置的公共结构和正则表达式。
-
-        Args:
-            config: 待校验的单个抽取配置。
-
-        Raises:
-            ValueError: 配置名称、模式、必填结构或正则表达式不合法。
-        """
-        # 先检查公共任务外壳，再按 mode 检查各自必需结构，错误会在启动阶段
-        # 暴露，而不是等到处理完整份报告后才失败。
-        name = str(config.get("name") or "").strip()
-        if not name:
-            raise ValueError("抽取配置缺少 name")
-        mode = str(config.get("mode", "layer_records"))
-        if mode not in cls._SUPPORTED_MODES:
-            raise ValueError(f"配置 {name} 使用了未知抽取模式: {mode}")
-        if mode == "layer_records" and not isinstance(config.get("fields"), dict):
-            raise ValueError(f"配置 {name} 的 layer_records 模式缺少 fields 字典")
-        if mode == "keyword_fields" and not isinstance(config.get("fields"), dict):
-            raise ValueError(f"配置 {name} 的 keyword_fields 模式缺少 fields 字典")
-        if mode == "section_content":
-            sections = config.get("sections")
-            if not isinstance(sections, list) or not sections:
-                raise ValueError(f"配置 {name} 的 section_content 模式缺少 sections 列表")
-            for index, section in enumerate(sections, start=1):
-                if not isinstance(section, dict) or not section.get("key"):
-                    raise ValueError(f"配置 {name} 的第 {index} 个章节缺少 key")
-                groups = section.get("alias_groups")
-                if groups is not None and (
-                    not isinstance(groups, list)
-                    or not groups
-                    or any(not isinstance(group, list) or not group for group in groups)
-                ):
-                    raise ValueError(
-                        f"配置 {name} 的章节 {section['key']} 的 alias_groups 必须是非空二维列表"
-                    )
-                has_match_rule = bool(section.get("aliases") or groups)
-                if not has_match_rule and not section.get("fallback_text") and not section.get(
-                    "placeholder"
-                ):
-                    raise ValueError(
-                        f"配置 {name} 的章节 {section['key']} 缺少标题别名或兜底规则"
-                    )
-        # 正则可能深藏在字段、章节或表格配置中，因此统一递归预编译。
-        cls._validate_regex_values(config, name)
-
-    @classmethod
-    def _validate_regex_values(cls, value: Any, config_name: str, path: str = "") -> None:
-        """递归检查配置中以 pattern 或 patterns 命名的正则项。
-
-        Args:
-            value: 当前待遍历的配置值。
-            config_name: 配置名称，用于生成错误信息。
-            path: 当前值在配置中的点分路径。
-
-        Raises:
-            ValueError: 某个正则表达式无法编译。
-        """
-        if isinstance(value, dict):
-            for key, child in value.items():
-                child_path = f"{path}.{key}" if path else str(key)
-                if key == "pattern" and isinstance(child, str):
-                    cls._compile_config_pattern(child, config_name, child_path)
-                elif key.endswith("patterns") and isinstance(child, list):
-                    for index, pattern in enumerate(child):
-                        if isinstance(pattern, str):
-                            cls._compile_config_pattern(
-                                pattern, config_name, f"{child_path}[{index}]"
-                            )
-                cls._validate_regex_values(child, config_name, child_path)
-        elif isinstance(value, list):
-            for index, child in enumerate(value):
-                cls._validate_regex_values(child, config_name, f"{path}[{index}]")
-
-    @staticmethod
-    def _compile_config_pattern(pattern: str, config_name: str, path: str) -> None:
-        """编译单个配置正则并转换为清晰的配置错误。
-
-        Args:
-            pattern: 正则表达式文本。
-            config_name: 配置名称。
-            path: 正则表达式所在配置路径。
-
-        Raises:
-            ValueError: 正则表达式语法错误。
-        """
-        try:
-            re.compile(pattern)
-        except re.error as exc:
-            raise ValueError(f"配置 {config_name} 的正则 {path} 不合法: {exc}") from exc
-
-    @classmethod
-    def from_files(
-        cls,
-        config_paths: str | Path | Iterable[str | Path],
-        *,
-        image_recognizer: Any | None = None,
-    ) -> "ExtractionEngine":
-        """从一个或多个 YAML 文件创建抽取引擎。
-
-        Args:
-            config_paths: 单个配置路径，或者配置路径集合。
-            image_recognizer: 可选的钻孔柱状图识别器。
-
-        Returns:
-            可以执行全部配置的抽取引擎。
-
-        Raises:
-            ValueError: 配置为空、缺少名称或任务名称重复。
-        """
-        if isinstance(config_paths, (str, Path)):
-            paths = [Path(config_paths)]
-        else:
-            paths = [Path(path) for path in config_paths]
-
-        # 多配置共享同一份 DocumentModel；这里仅加载和校验配置，不重复解析文档。
-        configs: list[dict[str, Any]] = []
-        names: set[str] = set()
-        for path in paths:
-            config = yaml.safe_load(path.read_text(encoding="utf-8"))
-            if not isinstance(config, dict) or not config.get("name"):
-                raise ValueError(f"抽取配置缺少 name: {path}")
-            name = str(config["name"])
-            if name in names:
-                raise ValueError(f"抽取任务名称重复: {name}")
-            config["_config_path"] = str(path.resolve())
-            names.add(name)
-            configs.append(config)
-        if not configs:
-            raise ValueError("至少需要一个抽取配置文件")
-        return cls(configs, image_recognizer=image_recognizer)
 
     def extract_all(self, document: DocumentModel) -> dict[str, Any]:
         """在同一份解析结果上执行全部配置。
@@ -1733,137 +1605,6 @@ class ExtractionEngine:
         name = re.sub(r"\s+", "", str(table_record.get("layer_name") or ""))
         return next((item for item in records if item.get("layer_name") == name), None) if name else None
 
-    def _apply_derived_fields(
-        self, records: list[dict[str, Any]], derived_fields: dict[str, Any]
-    ) -> None:
-        """使用配置中的首条命中规则计算土层派生字段。
-
-        Args:
-            records: 岩土层记录。
-            derived_fields: 默认值及条件规则配置。
-        """
-        # 规则按配置顺序执行并采用首条命中项，YAML 中更具体的条件应放在前面。
-        for record in records:
-            for field_name, field_config in derived_fields.items():
-                existing_value = record.get(field_name)
-                only_when_missing = bool(field_config.get("only_when_missing"))
-                # 标量已有报告值时完全保留。组合参数可能只给出一种桩型，仍需
-                # 继续计算规则值，以便只补齐字典中缺失的另一种桩型。
-                if only_when_missing and existing_value is not None and not isinstance(
-                    existing_value, dict
-                ):
-                    continue
-                # 某些业务默认值只有在“统计平均值、推荐值等所有来源都缺失”时
-                # 才能启用，避免默认值覆盖报告表格中的推荐参数。
-                missing_fields = [
-                    str(value) for value in field_config.get("only_when_all_missing", [])
-                ]
-                if missing_fields and any(record.get(name) is not None for name in missing_fields):
-                    continue
-                formula = field_config.get("formula")
-                value = self._evaluate_formula(record, formula) if formula else field_config.get("default")
-                for rule in field_config.get("rules", []):
-                    if self._condition_matches(record, rule.get("when", {})):
-                        value = rule.get("value")
-                        break
-                if value is not None:
-                    if (
-                        only_when_missing
-                        and isinstance(existing_value, dict)
-                        and isinstance(value, dict)
-                    ):
-                        # 报告明确值优先；只有不存在或为 None 的桩型才使用规则值。
-                        merged_value = dict(value)
-                        merged_value.update(
-                            {
-                                key: item
-                                for key, item in existing_value.items()
-                                if item is not None
-                            }
-                        )
-                        value = merged_value
-                    record[field_name] = value
-                    source_label = field_config.get("source_label")
-                    if source_label:
-                        record.setdefault("derived_field_sources", {})[field_name] = str(
-                            source_label
-                        )
-
-    @staticmethod
-    def _evaluate_formula(record: dict[str, Any], formula: dict[str, Any]) -> float | None:
-        """计算配置声明的简单两字段算式。
-
-        Args:
-            record: 当前岩土层数据。
-            formula: 运算符、左右字段名和小数位配置。
-
-        Returns:
-            计算结果；输入缺失或除数为零时返回 ``None``。
-        """
-        # 仅开放四则运算，不执行 eval，避免配置文件获得任意代码执行能力。
-        left_field = formula.get("left")
-        right_field = formula.get("right")
-        if not isinstance(left_field, str) or not isinstance(right_field, str):
-            return None
-        left = record.get(left_field)
-        right = record.get(right_field)
-        if not isinstance(left, (int, float)) or not isinstance(right, (int, float)):
-            return None
-        operator = formula.get("operator")
-        if operator == "divide" and right != 0:
-            value = left / right
-        elif operator == "multiply":
-            value = left * right
-        elif operator == "add":
-            value = left + right
-        elif operator == "subtract":
-            value = left - right
-        else:
-            return None
-        return round(value, int(formula.get("precision", 4)))
-
-    @staticmethod
-    def _condition_matches(record: dict[str, Any], condition: dict[str, Any]) -> bool:
-        """判断一条简单的配置化条件是否命中。
-
-        Args:
-            record: 当前岩土层数据。
-            condition: contains、数值比较或 all/any 组合条件。
-
-        Returns:
-            条件是否成立。
-        """
-        # all/any 允许组合条件，叶子节点只支持白名单内的字符串和数值比较。
-        if "all" in condition:
-            return all(ExtractionEngine._condition_matches(record, item) for item in condition["all"])
-        if "any" in condition:
-            return any(ExtractionEngine._condition_matches(record, item) for item in condition["any"])
-        field = condition.get("field")
-        if not isinstance(field, str):
-            return False
-        value = record.get(field)
-        # 同一个业务指标可能来自统计表或“建议值/推荐值”表。派生规则优先使用
-        # 统计值，缺失时自动回退到 *_recommended，避免在 YAML 中重复两套规则。
-        if value is None:
-            value = record.get(f"{field}_recommended")
-        if "contains_any" in condition:
-            return any(word in str(value or "") for word in condition["contains_any"])
-        if "not_contains_any" in condition:
-            return not any(word in str(value or "") for word in condition["not_contains_any"])
-        if value is None:
-            return False
-        if "lt" in condition:
-            return value < condition["lt"]
-        if "lte" in condition:
-            return value <= condition["lte"]
-        if "gt" in condition:
-            return value > condition["gt"]
-        if "gte" in condition:
-            return value >= condition["gte"]
-        if "eq" in condition:
-            return value == condition["eq"]
-        return bool(value)
-
     def _extract_fields(self, text: str, fields: dict[str, Any]) -> dict[str, Any]:
         """按照字段配置从一段文本中提取值。
 
@@ -2141,82 +1882,6 @@ class ExtractionEngine:
             records[-1]["adjustment"] = float(adjustment)
             records[-1]["final_value"] = last_effective_value + float(adjustment)
             records[-1]["adjustment_reason"] = f"最后一层厚度增加 {adjustment}m"
-
-
-def merge_first_cultivated_soil_layer(
-    layers: Any,
-    excluded_names: Iterable[str] = ("耕土",),
-) -> list[dict[str, Any]]:
-    """删除首层耕土，并将其厚度合并到下一层业务记录。
-
-    Args:
-        layers: 已按地质顺序排列的土层记录。
-        excluded_names: 需要从首层排除的土层名称关键字，默认仅为“耕土”。
-
-    Returns:
-        复制后的业务土层列表。满足条件时删除首层，并将首层厚度累加到下一层
-        的有效厚度、最终厚度和厚度统计字段。
-
-    Notes:
-        原始候选记录不会被修改；抽取流程从本方法返回后，所有派生计算均使用
-        合并后的新列表。
-    """
-    copied_layers = [dict(layer) for layer in layers if isinstance(layer, dict)]
-    if len(copied_layers) < 2:
-        return copied_layers
-    first_name = str(copied_layers[0].get("layer_name") or "")
-    names = [str(name) for name in excluded_names]
-    if not any(name in first_name for name in names):
-        return copied_layers
-
-    first = copied_layers[0]
-    following = copied_layers[1]
-
-    def business_thickness(record: dict[str, Any]) -> float | None:
-        """按照业务厚度优先级读取一条土层的当前厚度。"""
-        for field in (
-            "final_value",
-            "effective_value",
-            "thickness",
-            "thickness_average",
-            "maximum_exposed",
-            "maximum_exposed_thickness",
-            "thickness_exact",
-            "thickness_max",
-        ):
-            value = record.get(field)
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                return float(value)
-        return None
-
-    first_thickness = business_thickness(first)
-    following_thickness = business_thickness(following)
-    if first_thickness is not None and following_thickness is not None:
-        merged_thickness = round(first_thickness + following_thickness, 6)
-        # selection 记录使用 effective/final，精简 result 使用 thickness；分别更新
-        # 实际存在的字段，保证任何后续入口读取到的都是合并后厚度。
-        updated = False
-        for field in ("effective_value", "final_value", "thickness"):
-            if isinstance(following.get(field), (int, float)):
-                following[field] = merged_thickness
-                updated = True
-        if not updated:
-            following["final_value"] = merged_thickness
-
-        # 两层都有明确统计值时同步合并，避免范围与最终厚度互相矛盾。
-        for field in ("thickness_min", "thickness_max", "thickness_average"):
-            first_value = first.get(field)
-            following_value = following.get(field)
-            if isinstance(first_value, (int, float)) and isinstance(
-                following_value, (int, float)
-            ):
-                following[field] = round(float(first_value) + float(following_value), 6)
-        following["merged_cultivated_soil"] = {
-            "layer_code": first.get("layer_code"),
-            "layer_name": first.get("layer_name"),
-            "thickness": first_thickness,
-        }
-    return copied_layers[1:]
 
 
 def _write_json_file(path: str | Path, data: Any) -> Path:
@@ -2787,41 +2452,6 @@ def _compact_record(
         "pile_tip_resistance": selected_tip_resistance,
     }
     return _without_empty_values(compact)
-
-
-def infer_foundation_type(layer_name: str) -> str:
-    """根据岩土层名称判断该层采用的桩型。
-
-    Args:
-        layer_name: 岩土层名称，例如“粉质黏土”“强风化砂砾岩”“卵石”。
-
-    Returns:
-        名称包含“岩”或“石”时返回 ``cast_in_place``（灌注桩），其余返回
-        ``precast``（预制桩）。
-    """
-    name = str(layer_name or "")
-    return "cast_in_place" if "岩" in name or "石" in name else "precast"
-
-
-def select_foundation_parameter(
-    layer_name: str,
-    *,
-    cast_in_place: Any,
-    precast: Any,
-) -> Any:
-    """按照土层名称公共规则选择灌注桩或预制桩参数。
-
-    Args:
-        layer_name: 岩土层名称。
-        cast_in_place: 灌注桩对应参数值。
-        precast: 预制桩对应参数值。
-
-    Returns:
-        当前土层按规则选中的参数值。
-    """
-    if infer_foundation_type(layer_name) == "cast_in_place":
-        return cast_in_place
-    return precast
 
 
 def _compact_layer_boreholes(record: dict[str, Any]) -> list[dict[str, Any]]:

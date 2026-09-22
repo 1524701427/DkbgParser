@@ -4,10 +4,22 @@
 
 ## 当前能力
 
-当前核心代码按职责分层：文档 loader 只负责解析，`ExtractionEngine` 负责业务抽取，
-`parser_engine.callback.mapping` 负责结果到接口字段的映射，
-`parser_engine.callback.client` 只负责 HTTP POST。旧的
-`parser_engine.callback_mapping` 导入路径继续兼容。
+当前核心代码按职责分层：
+
+- `parser_engine/loaders/`：Word/PDF/OpenDataLoader 文档解析；
+- `parser_engine/extraction.py`：抽取流程编排与文档结构处理；
+- `parser_engine/extraction_parts/config.py`：YAML 配置加载、校验、正则检查；
+- `parser_engine/extraction_parts/rules.py`：派生字段规则执行；
+- `parser_engine/extraction_parts/business.py`：耕土合并、逐层桩型等公共业务方法；
+- `parser_engine/image_recognition.py`：图片识别流程编排和本地 RapidOCR；
+- `parser_engine/image_parts/vision.py`：兼容多模态接口的视觉 HTTP 客户端；
+- `parser_engine/image_parts/aggregation.py`：钻孔观测标准化、深度校验和厚度聚合；
+- `parser_engine/callback/mapping.py`：业务结果到回调接口字段映射；
+- `parser_engine/callback/client.py`：逆向地质 HTTP POST；
+- `parser_engine/logging_utils.py`：控制台/文件日志和阶段耗时。
+
+旧的 `parser_engine.extraction`、`parser_engine.image_recognition`、
+`parser_engine.callback_mapping` 对外导入方式继续兼容，结构重构不要求调用方改代码。
 
 - Word：`.doc/.docx/.docm/.dot/.dotx/.rtf/.odt`，使用本地 Aspose.Words
 - PDF：默认使用本地 Aspose.PDF；可选 OpenDataLoader PDF

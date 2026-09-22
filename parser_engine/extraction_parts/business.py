@@ -21,6 +21,7 @@ def merge_first_cultivated_soil_layer(
     following = copied_layers[1]
 
     def business_thickness(record: dict[str, Any]) -> float | None:
+        """按既有业务优先级读取一条土层当前可用厚度。"""
         for field in (
             "final_value",
             "effective_value",

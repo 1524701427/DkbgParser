@@ -27,13 +27,32 @@ class OpenAICompatibleVisionClient:
         api_key: str | None = None,
         timeout: int = 120,
     ) -> None:
+        """初始化兼容 Chat Completions 的视觉客户端。
+
+        Args:
+            api_url: 多模态接口完整地址。
+            model: 服务端模型名称。
+            api_key: 可选 API Key；为空时读取 VISION_API_KEY。
+            timeout: 单张图片请求超时时间，单位为秒。
+        """
         self.api_url = api_url
         self.model = model
         self.api_key = api_key or os.getenv("VISION_API_KEY")
         self.timeout = timeout
 
     def recognize(self, image_path: Path, prompt: str) -> dict[str, Any]:
-        """把页面图片发送给视觉模型，并解析模型返回的 JSON。"""
+        """把页面图片发送给视觉模型，并解析模型返回的 JSON。
+
+        Args:
+            image_path: 待识别图片路径。
+            prompt: 发送给视觉模型的识别提示词。
+
+        Returns:
+            模型返回的结构化 JSON 对象。
+
+        Raises:
+            RuntimeError: 响应内容中找不到合法 JSON 对象。
+        """
         encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
         payload = {
             "model": self.model,

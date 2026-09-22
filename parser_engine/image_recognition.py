@@ -765,10 +765,20 @@ class OpenAICompatibleVisionClient:
         content = body["choices"][0]["message"]["content"]
         if isinstance(content, dict):
             return content
-        match = re.search(r"\{.*\}", str(content), re.DOTALL)
-        if not match:
-            raise RuntimeError("视觉模型没有返回合法 JSON")
-        return json.loads(match.group(0))
+        # 兼容 ```json ...```、前后说明文字等响应。逐个尝试 JSON
+        # 对象起点，避免贪婪正则把多个花括号片段拼成一个非法 JSON。
+        content_text = str(content)
+        decoder = json.JSONDecoder()
+        for index, char in enumerate(content_text):
+            if char != "{":
+                continue
+            try:
+                parsed, _ = decoder.raw_decode(content_text[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+        raise RuntimeError("视觉模型没有返回合法 JSON")
 
 
 class BoreholeImageRecognizer:
@@ -864,7 +874,16 @@ class BoreholeImageRecognizer:
             ValueError: 输入文档不是 PDF，或没有可识别页面。
             RuntimeError: 页面渲染依赖不可用或视觉接口调用失败。
         """
-        if document.source_format.lower() not in {"pdf", "doc", "docx", "docm", "rtf", "odt"}:
+        if document.source_format.lower() not in {
+            "pdf",
+            "doc",
+            "docx",
+            "docm",
+            "dot",
+            "dotx",
+            "rtf",
+            "odt",
+        }:
             raise ValueError("图片兜底仅支持 PDF 和 Word 文档")
         self._configure_client(config)
         images = self._prepare_images(

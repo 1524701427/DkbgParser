@@ -1685,6 +1685,87 @@ def test_missing_strength_parameters_use_layer_type_defaults(
     }
 
 
+def test_silt_layer_uses_fixed_default_eta_values_even_when_clay_content_is_low():
+    """验证土层名含粉土时固定采用 ηb=0.3、ηd=1.5。"""
+    engine = ExtractionEngine.from_files("configs/layer_thickness.yaml")
+    record = {
+        "layer_name": "粉土",
+        "clay_content": 8.9,
+    }
+
+    engine._apply_derived_fields([record], engine.configs[0]["derived_fields"])
+
+    assert record["width_bearing_coefficient"] == 0.3
+    assert record["depth_bearing_coefficient"] == 1.5
+
+
+def test_pile_parameter_table_selects_qsik_qpk_by_current_layer_type():
+    """验证桩侧/桩端阻力仅来自桩基参数表，并按当前土层选择对应桩型列。"""
+    table = TableData(
+        rows=4,
+        columns=6,
+        cells=[
+            TableCell(0, 0, "土层名称", column_span=2),
+            TableCell(0, 2, "钻孔灌注桩", column_span=2),
+            TableCell(0, 4, "预制桩", column_span=2),
+            TableCell(1, 0, "土层名称", column_span=2),
+            TableCell(1, 2, "桩的侧阻力标准值 qsik（kPa）"),
+            TableCell(1, 3, "桩的端阻力标准值 qpk（kPa）"),
+            TableCell(1, 4, "桩的侧阻力标准值 qsik（kPa）"),
+            TableCell(1, 5, "桩的端阻力标准值 qpk（kPa）"),
+            TableCell(2, 0, "⑦"),
+            TableCell(2, 1, "粉质黏土"),
+            TableCell(2, 2, "76"),
+            TableCell(2, 3, "1000"),
+            TableCell(2, 4, "78"),
+            TableCell(2, 5, "2600"),
+            TableCell(3, 0, "⑧"),
+            TableCell(3, 1, "中风化灰岩"),
+            TableCell(3, 2, "80"),
+            TableCell(3, 3, "1500"),
+            TableCell(3, 4, "82"),
+            TableCell(3, 5, "3200"),
+        ],
+    )
+    document = DocumentModel(
+        source_path="report.pdf",
+        source_format="pdf",
+        parser_backend="test",
+        blocks=[
+            DocumentBlock("h", "heading", "地层岩性分布特征", page=1),
+            DocumentBlock("l7", "paragraph", "⑦层粉质黏土：厚度1.0m。", page=1),
+            DocumentBlock("l8", "paragraph", "⑧层中风化灰岩：厚度2.0m。", page=1),
+            DocumentBlock("t", "table", "桩基参数 钻孔灌注桩 预制桩", table=table, page=2),
+        ],
+    )
+
+    selected = ExtractionEngine.from_files("configs/layer_thickness.yaml").extract_all(document)[
+        "tasks"
+    ]["layer_thickness"]["selected_records"]
+    by_code = {record["layer_code"]: record for record in selected}
+
+    compact = _compact_result(
+        {
+            "tasks": {
+                "layer_thickness": {
+                    "mode": "layer_records",
+                    "selected_records": selected,
+                }
+            }
+        }
+    )["geotechnical_layer_parameters"]
+    compact_by_code = {record["layer_code"]: record for record in compact}
+
+    # 粉质黏土不含“岩/石”→预制桩列。
+    assert compact_by_code["⑦"]["pile_side_resistance"] == 78.0
+    assert compact_by_code["⑦"]["pile_tip_resistance"] == 2600.0
+    # 中风化灰岩含“岩”→灌注桩列。
+    assert compact_by_code["⑧"]["pile_side_resistance"] == 80.0
+    assert compact_by_code["⑧"]["pile_tip_resistance"] == 1500.0
+    assert by_code["⑦"]["precast_side_resistance"] == 78.0
+    assert by_code["⑧"]["cast_in_place_tip_resistance"] == 1500.0
+
+
 def test_liquefied_fine_sand_uses_prd_bearing_correction_coefficients():
     """验证液化粉砂/细砂按 PRD 取 ηb=0、ηd=1。"""
     engine = ExtractionEngine.from_files("configs/layer_thickness.yaml")

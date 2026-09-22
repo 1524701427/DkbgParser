@@ -42,6 +42,38 @@ from parser_engine.models import (
 from parser_engine.loaders.opendataloader import OpenDataLoaderPdfLoader
 
 
+def test_callback_legacy_import_path_stays_compatible():
+    """验证 callback 模块拆分后旧导入路径仍保持兼容。"""
+    from parser_engine import callback as callback_package
+    from parser_engine import callback_mapping as legacy
+
+    assert legacy.build_reverse_geology_payload is callback_package.build_reverse_geology_payload
+    assert legacy.post_reverse_geology_payload is callback_package.post_reverse_geology_payload
+    assert legacy.DEFAULT_REVERSE_GEOLOGY_URL == (
+        "http://172.16.14.71:10004/rpc-api/reverse-callback/parse-reverse-geology"
+    )
+
+
+def test_file_logging_writes_stage_messages(tmp_path: Path):
+    """验证主流程日志工具可同时写入文件并记录阶段耗时。"""
+    import logging
+
+    from parser_engine.logging_utils import configure_logging, log_stage
+
+    log_path = tmp_path / "logs" / "report.log"
+    configure_logging(log_path)
+    test_logger = logging.getLogger("dkbg-test")
+
+    with log_stage(test_logger, "测试阶段"):
+        test_logger.info("业务日志")
+
+    content = log_path.read_text(encoding="utf-8")
+    assert "阶段开始：测试阶段" in content
+    assert "业务日志" in content
+    assert "阶段完成：测试阶段" in content
+    assert "耗时" in content
+
+
 def test_build_reverse_geology_payload_maps_business_result():
     """验证精简结果能够按基础形式映射成接口请求体。"""
     result = {
@@ -249,7 +281,7 @@ def test_post_reverse_geology_payload_sends_direct_json_body(monkeypatch):
         return FakeResponse()
 
     monkeypatch.setattr(
-        "parser_engine.callback_mapping.urllib.request.urlopen",
+        "parser_engine.callback.client.urllib.request.urlopen",
         fake_urlopen,
     )
 
@@ -289,7 +321,7 @@ def test_post_reverse_geology_payload_raises_on_http_error(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "parser_engine.callback_mapping.urllib.request.urlopen",
+        "parser_engine.callback.client.urllib.request.urlopen",
         fail_urlopen,
     )
 

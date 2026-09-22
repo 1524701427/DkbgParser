@@ -1,15 +1,10 @@
-"""兼容旧导入路径。
+"""逆向地质接口映射与发送。"""
 
-新代码请优先从 :mod:`parser_engine.callback` 导入。该模块保留原有公开 API，
-避免已有调用方因结构重构而修改业务代码。
-"""
-
-from .callback import (
+from .client import DEFAULT_REVERSE_GEOLOGY_URL, post_reverse_geology_payload
+from .mapping import (
     CALLBACK_FIELD_MAPPING,
     CALLBACK_LAYER_FIELD_MAPPING,
-    DEFAULT_REVERSE_GEOLOGY_URL,
     build_reverse_geology_payload,
-    post_reverse_geology_payload,
     write_reverse_geology_payload,
 )
 

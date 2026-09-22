@@ -1123,8 +1123,56 @@ def test_layer_table_average_values_and_density_conversion():
     assert second["side_friction"] == 51.0
     assert second["cone_tip_resistance"] == 3.354
     assert second["clay_content"] == 8.9
-    assert second["pile_tip_resistance"] == 8.9
+    assert "pile_tip_resistance" not in second
     assert second["evidence"]["table_fields"]["gravity_density"]["multiplier"] == 9.8
+
+
+def test_physical_statistics_table_does_not_map_rho_c_or_qc_to_pile_tip_resistance():
+    """验证物理统计表中的ρc/qc不会冒充桩基参数qpk。"""
+    table = TableData(
+        rows=7,
+        columns=4,
+        cells=[
+            TableCell(0, 0, "项目"),
+            TableCell(0, 1, "最小值"),
+            TableCell(0, 2, "最大值"),
+            TableCell(0, 3, "平均值"),
+            TableCell(1, 0, "γ（kN/m³）"),
+            TableCell(1, 3, "19.35"),
+            TableCell(2, 0, "C（kPa）"),
+            TableCell(2, 3, "8.9"),
+            TableCell(3, 0, "Φ（度）"),
+            TableCell(3, 3, "19.5"),
+            TableCell(4, 0, "Es1-2（MPa）"),
+            TableCell(4, 3, "6.03"),
+            TableCell(5, 0, "fs（kPa）"),
+            TableCell(5, 3, "51"),
+            TableCell(6, 0, "ρc"),
+            TableCell(6, 3, "8.9"),
+        ],
+    )
+    document = DocumentModel(
+        source_path="report.pdf",
+        source_format="pdf",
+        parser_backend="test",
+        blocks=[
+            DocumentBlock("h", "heading", "地层岩性分布特征", page=1),
+            DocumentBlock("l", "paragraph", "②层粉土：厚度1.0m。", page=1),
+            DocumentBlock("t", "table", table=table, page=2),
+        ],
+    )
+
+    record = ExtractionEngine.from_files("configs/layer_thickness.yaml").extract_all(document)[
+        "tasks"
+    ]["layer_thickness"]["records"][0]
+
+    assert record["gravity_density"] == 19.35
+    assert record["cohesion"] == 8.9
+    assert record["friction_angle"] == 19.5
+    assert record["compression_modulus"] == 6.03
+    assert record["side_friction"] == 51.0
+    assert record["clay_content"] == 8.9
+    assert "pile_tip_resistance" not in record
 
 
 def test_physical_table_prefers_average_values_with_compact_unit_labels():

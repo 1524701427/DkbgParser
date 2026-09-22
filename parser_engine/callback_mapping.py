@@ -11,7 +11,7 @@ from .extraction import merge_first_cultivated_soil_layer, select_foundation_par
 
 
 DEFAULT_REVERSE_GEOLOGY_URL = (
-    "http://172.16.14.71:10004/rpc-api/reverse-callback/parse-reverse-geology"
+    "http://172.16.14.71:10004/reverse-callback/parse-reverse-geology"
 )
 
 
@@ -87,7 +87,7 @@ def build_reverse_geology_payload(
     result: Mapping[str, Any],
     *,
     project_id: int,
-    geology_id: int = 0,
+    geology_id: int = 1,
     layer_ids: Mapping[str, int] | None = None,
     handle_keyword_codes: Mapping[str, int] | None = None,
     ambiguous_corrosion_code: int | None = None,

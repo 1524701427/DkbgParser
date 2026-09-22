@@ -343,7 +343,12 @@ class OpenDataLoaderPdfLoader(DocumentLoader):
         """
         if not isinstance(values, (list, tuple)) or len(values) != 4:
             return None
-        x1, y1, x2, y2 = map(float, values)
+        try:
+            x1, y1, x2, y2 = map(float, values)
+        except (TypeError, ValueError):
+            # 第三方后端偶发输出空串、null 或非数值坐标时，只丢弃坐标信息，
+            # 不应让整份报告解析失败。
+            return None
         return BoundingBox(left=x1, top=y1, width=x2 - x1, height=y2 - y1)
 
     @staticmethod

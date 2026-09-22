@@ -46,7 +46,7 @@ def load_aspose(product: Literal["words", "pdf"]):
             from pythonnet import load
 
             # 显式指定 runtimeconfig，确保 Aspose.PDF 能找到桌面运行时依赖。
-            runtime_config = Path(__file__).parents[1] / "runtime" / "DkbgParser.runtimeconfig.json"
+            runtime_config = runtime_dir / "DkbgParser.runtimeconfig.json"
             if runtime_config.is_file():
                 load("coreclr", runtime_config=str(runtime_config))
             else:

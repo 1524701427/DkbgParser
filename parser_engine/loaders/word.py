@@ -113,8 +113,24 @@ class AsposeWordsLoader(DocumentLoader):
                 # 个别矢量对象不暴露 HasImage，忽略即可，不影响正文解析。
                 continue
 
+        # 页面尺寸使用该页实际所属分节的 PageSetup。报告中途切换横向页、
+        # 纸张尺寸或附录分节时，不能始终套用第 1 节页面设置。
+        page_sections: dict[int, int] = {}
+        for block in model.blocks:
+            if block.page is not None and block.section is not None:
+                page_sections.setdefault(block.page, block.section)
+
+        active_section = 1
         for page_number in range(1, document.PageCount + 1):
-            setup = document.Sections[0].PageSetup if document.Sections.Count else None
+            active_section = page_sections.get(page_number, active_section)
+            if document.Sections.Count:
+                section_index = max(
+                    0,
+                    min(active_section - 1, document.Sections.Count - 1),
+                )
+                setup = document.Sections[section_index].PageSetup
+            else:
+                setup = None
             model.pages.append(
                 PageInfo(
                     number=page_number,

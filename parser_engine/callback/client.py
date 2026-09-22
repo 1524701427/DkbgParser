@@ -18,7 +18,20 @@ def post_reverse_geology_payload(
     api_url: str = DEFAULT_REVERSE_GEOLOGY_URL,
     timeout: float = 30.0,
 ) -> Any:
-    """把映射后的地质结果作为 JSON 直接 POST 到逆向回调接口。"""
+    """把映射后的地质结果作为 JSON 直接 POST 到逆向回调接口。
+
+    Args:
+        payload: 已完成字段映射的 callback 请求体。
+        api_url: 逆向地质回调接口完整地址。
+        timeout: 请求超时时间，单位为秒。
+
+    Returns:
+        JSON 响应解析为 Python 对象；普通文本按字符串返回；空响应返回 None。
+
+    Raises:
+        ValueError: 接口地址为空或 timeout 非正数。
+        RuntimeError: HTTP 状态异常、网络错误或请求超时。
+    """
     url = str(api_url or "").strip()
     if not url:
         raise ValueError("逆向地质回调地址不能为空")

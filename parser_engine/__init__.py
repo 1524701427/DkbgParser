@@ -11,7 +11,9 @@ from .extraction import (
 from .callback_mapping import (
     CALLBACK_FIELD_MAPPING,
     CALLBACK_LAYER_FIELD_MAPPING,
+    DEFAULT_REVERSE_GEOLOGY_URL,
     build_reverse_geology_payload,
+    post_reverse_geology_payload,
     write_reverse_geology_payload,
 )
 from .image_recognition import (
@@ -34,7 +36,9 @@ __all__ = [
     "BoreholeImageRecognizer",
     "CALLBACK_FIELD_MAPPING",
     "CALLBACK_LAYER_FIELD_MAPPING",
+    "DEFAULT_REVERSE_GEOLOGY_URL",
     "build_reverse_geology_payload",
+    "post_reverse_geology_payload",
     "OpenAICompatibleVisionClient",
     "RapidOCRClient",
     "ParserConfig",

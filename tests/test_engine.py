@@ -463,7 +463,6 @@ def test_compact_result_removes_query_details():
                         "friction_angle": 19.5,
                         "compression_modulus": 6.03,
                         "side_friction": 51.0,
-                        "pile_tip_resistance": 8.9,
                         "poisson_ratio": 0.35,
                         "bearing_capacity": 120.0,
                         "evidence": {"text": "很长的原文"},
@@ -508,7 +507,6 @@ def test_compact_result_removes_query_details():
         "friction_angle": 19.5,
         "compression_modulus_es1_2": 6.03,
         "side_friction_fs": 51.0,
-        "pile_tip_resistance_rho_c": 8.9,
         "poisson_ratio": 0.35,
         "bearing_capacity_fak": 120.0,
     }

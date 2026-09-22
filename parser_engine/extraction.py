@@ -2768,8 +2768,8 @@ def _compact_record(
         "cohesion": cohesion,
         "friction_angle": friction_angle,
         "compression_modulus_es1_2": compression_modulus,
+        # 物理力学统计表中的 fs 取平均值；ρc 是黏粒含量，不再作为桩端阻力输出。
         "side_friction_fs": record.get("side_friction"),
-        "pile_tip_resistance_rho_c": record.get("pile_tip_resistance"),
         "poisson_ratio": record.get("poisson_ratio"),
         "bearing_capacity_fak": record.get("bearing_capacity"),
         "width_bearing_coefficient_eta_b": record.get("width_bearing_coefficient"),

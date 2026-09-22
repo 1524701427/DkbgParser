@@ -15,6 +15,7 @@ from parser_engine.extraction import (
 )
 from parser_engine.callback_mapping import (
     build_reverse_geology_payload,
+    post_reverse_geology_payload,
     write_reverse_geology_payload,
 )
 from parser_engine.image_recognition import (
@@ -215,6 +216,88 @@ def test_callback_can_still_omit_missing_values_when_explicitly_requested():
     assert payload["projectId"] == 8
     assert "groundwaterDepth" not in payload
     assert "epa" not in payload
+
+
+def test_post_reverse_geology_payload_sends_direct_json_body(monkeypatch):
+    """验证映射结果直接以 JSON POST 到逆向地质接口。"""
+    captured = {}
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def getcode(self):
+            return self.status
+
+        def read(self):
+            return json.dumps(
+                {"code": 0, "message": "success"},
+                ensure_ascii=False,
+            ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["method"] = request.get_method()
+        captured["content_type"] = request.headers.get("Content-type")
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        "parser_engine.callback_mapping.urllib.request.urlopen",
+        fake_urlopen,
+    )
+
+    payload = {
+        "projectId": 100,
+        "epa": None,
+        "geologyRockSoilsReq": [{"id": None, "name": "②粉土"}],
+    }
+    response = post_reverse_geology_payload(
+        payload,
+        api_url="http://callback.test/rpc-api/reverse-callback/parse-reverse-geology",
+        timeout=12,
+    )
+
+    assert captured["url"].endswith(
+        "/rpc-api/reverse-callback/parse-reverse-geology"
+    )
+    assert captured["method"] == "POST"
+    assert captured["content_type"] == "application/json; charset=utf-8"
+    assert captured["body"] == payload
+    assert captured["timeout"] == 12.0
+    assert response == {"code": 0, "message": "success"}
+
+
+def test_post_reverse_geology_payload_raises_on_http_error(monkeypatch):
+    """验证回调接口 HTTP 失败时主流程能得到明确异常。"""
+    import io
+    import urllib.error
+
+    def fail_urlopen(request, timeout):
+        raise urllib.error.HTTPError(
+            request.full_url,
+            500,
+            "Internal Server Error",
+            hdrs=None,
+            fp=io.BytesIO(b'{"message":"failed"}'),
+        )
+
+    monkeypatch.setattr(
+        "parser_engine.callback_mapping.urllib.request.urlopen",
+        fail_urlopen,
+    )
+
+    with pytest.raises(RuntimeError, match="HTTP 500"):
+        post_reverse_geology_payload(
+            {"projectId": 1},
+            api_url="http://callback.test/callback",
+        )
 
 
 def test_write_reverse_geology_payload_reads_result_file(tmp_path: Path):

@@ -1,0 +1,62 @@
+name: PRD Extract Temporary
+
+on:
+  push:
+    branches:
+      - fix/code-only-stability
+
+permissions:
+  contents: read
+
+jobs:
+  extract-prd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract PRD text
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import xml.etree.ElementTree as ET
+
+          path = Path("地勘报告解析需求PRD-240111v1.0(1)(1).docx")
+          ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+
+          def text_of(node):
+              parts = []
+              for child in node.iter():
+                  tag = child.tag.rsplit("}", 1)[-1]
+                  if tag == "t" and child.text:
+                      parts.append(child.text)
+                  elif tag == "tab":
+                      parts.append("\t")
+                  elif tag in {"br", "cr"}:
+                      parts.append("\n")
+              return "".join(parts).strip()
+
+          with ZipFile(path) as zf:
+              root = ET.fromstring(zf.read("word/document.xml"))
+
+          body = root.find("w:body", ns)
+          print("===PRD_TEXT_BEGIN===")
+          line_no = 0
+          for child in list(body):
+              tag = child.tag.rsplit("}", 1)[-1]
+              if tag == "p":
+                  text = text_of(child)
+                  if text:
+                      line_no += 1
+                      print(f"{line_no:04d}\tP\t{text}")
+              elif tag == "tbl":
+                  for row in child.findall("w:tr", ns):
+                      cells = []
+                      for cell in row.findall("w:tc", ns):
+                          cells.append(text_of(cell).replace("\n", " / "))
+                      if any(cells):
+                          line_no += 1
+                          print(f"{line_no:04d}\tT\t" + " | ".join(cells))
+          print("===PRD_TEXT_END===")
+          PY

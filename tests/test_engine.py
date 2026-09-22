@@ -162,8 +162,8 @@ def test_build_reverse_geology_payload_rejects_multiple_handle_keyword_codes():
         )
 
 
-def test_build_reverse_geology_payload_omits_missing_values():
-    """验证缺失结果不使用零值覆盖接口中的已有业务数据。"""
+def test_build_reverse_geology_payload_keeps_missing_values_as_null():
+    """验证最终接口映射固定返回字段，未映射值使用 null。"""
     payload = build_reverse_geology_payload(
         {"geotechnical_layer_parameters": []},
         project_id=8,
@@ -171,6 +171,48 @@ def test_build_reverse_geology_payload_omits_missing_values():
 
     assert payload["projectId"] == 8
     assert payload["handleKeyword"] == 0
+    assert payload["groundwaterDepth"] is None
+    assert payload["epa"] is None
+    assert payload["ld"] is None
+    assert payload["tg"] is None
+    assert payload["regionalGeologyInfo"] is None
+    assert payload["waterSoilErosion"] is None
+    assert payload["geologyRockSoilsReq"] == []
+
+
+def test_callback_layer_keeps_unmapped_fields_as_null():
+    """验证土层接口字段未抽取或ID未匹配时保留为 null。"""
+    result = {
+        "geotechnical_layer_parameters": [
+            {
+                "layer_code": "②",
+                "layer_name": "粉质黏土",
+                "thickness": 2.5,
+            }
+        ]
+    }
+
+    payload = build_reverse_geology_payload(result, project_id=1)
+    layer = payload["geologyRockSoilsReq"][0]
+
+    assert layer["name"] == "②粉质黏土"
+    assert layer["id"] is None
+    assert layer["thickness"] == 2.5
+    assert layer["gravityDensity"] is None
+    assert layer["bearingCapacity"] is None
+    assert layer["standardPileEndResistance"] is None
+    assert layer["standardPileSideResistance"] is None
+
+
+def test_callback_can_still_omit_missing_values_when_explicitly_requested():
+    """验证旧调用方仍可显式选择省略空字段。"""
+    payload = build_reverse_geology_payload(
+        {"geotechnical_layer_parameters": []},
+        project_id=8,
+        omit_missing=True,
+    )
+
+    assert payload["projectId"] == 8
     assert "groundwaterDepth" not in payload
     assert "epa" not in payload
 

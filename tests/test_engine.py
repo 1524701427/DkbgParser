@@ -17,7 +17,11 @@ from parser_engine.callback_mapping import (
     build_reverse_geology_payload,
     write_reverse_geology_payload,
 )
-from parser_engine.image_recognition import BoreholeImageRecognizer, RapidOCRClient
+from parser_engine.image_recognition import (
+    BoreholeImageRecognizer,
+    OpenAICompatibleVisionClient,
+    RapidOCRClient,
+)
 from parser_engine.aspose_runtime import load_aspose
 from parser_engine.exceptions import (
     BackendUnavailableError,
@@ -2215,6 +2219,57 @@ def test_missing_image_recognizer_marks_partial_layer_task():
 
     assert task["status"] == "partial"
     assert any("没有传入图片识别器" in warning for warning in task["warnings"])
+
+
+def test_opendataloader_bounding_box_ignores_invalid_coordinates():
+    """验证第三方 PDF 后端坐标异常时只丢弃坐标，不中断文档解析。"""
+    assert OpenDataLoaderPdfLoader._bounding_box(["10", "20", "30", "40"]) is not None
+    assert OpenDataLoaderPdfLoader._bounding_box(["10", "", "30", "40"]) is None
+    assert OpenDataLoaderPdfLoader._bounding_box(["10", None, "30", "40"]) is None
+
+
+def test_vision_client_extracts_first_valid_json_object(tmp_path: Path, monkeypatch):
+    """验证视觉服务带说明文字或非法花括号片段时仍能取得合法 JSON。"""
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            body = {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                "识别说明 {这不是JSON}。\n"
+                                "```json\n"
+                                '{"borehole_id":"F01","layers":[]}\n'
+                                "```"
+                            )
+                        }
+                    }
+                ]
+            }
+            return json.dumps(body, ensure_ascii=False).encode("utf-8")
+
+    monkeypatch.setattr(
+        "parser_engine.image_recognition.urllib.request.urlopen",
+        lambda *_args, **_kwargs: FakeResponse(),
+    )
+
+    image_path = tmp_path / "page.png"
+    image_path.write_bytes(b"png")
+    client = OpenAICompatibleVisionClient(
+        "http://vision.test/v1/chat/completions",
+        "test-model",
+    )
+
+    result = client.recognize(image_path, "识别钻孔柱状图")
+
+    assert result == {"borehole_id": "F01", "layers": []}
 
 
 def test_opendataloader_scanned_pdf_policy_is_enforced():

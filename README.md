@@ -4,6 +4,11 @@
 
 ## 当前能力
 
+当前核心代码按职责分层：文档 loader 只负责解析，`ExtractionEngine` 负责业务抽取，
+`parser_engine.callback.mapping` 负责结果到接口字段的映射，
+`parser_engine.callback.client` 只负责 HTTP POST。旧的
+`parser_engine.callback_mapping` 导入路径继续兼容。
+
 - Word：`.doc/.docx/.docm/.dot/.dotx/.rtf/.odt`，使用本地 Aspose.Words
 - PDF：默认使用本地 Aspose.PDF；可选 OpenDataLoader PDF
 - 统一模型：页面、段落、标题、列表、表格、文本 span、字体样式、PDF 坐标
@@ -29,6 +34,10 @@ main(
 ```powershell
 python main.py
 ```
+
+每次运行同时输出控制台日志和报告独立日志：
+`output/logs/<报告名>.log`。日志会记录文档解析与业务抽取、接口字段映射、
+逆向接口 POST 三个阶段的开始、完成、耗时以及接口响应，便于定位性能和接口问题。
 
 JSON 文件名会根据输入文件自动生成。例如：
 

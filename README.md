@@ -274,6 +274,11 @@ main(
 )
 ```
 
+主流程生成映射 JSON 后，会默认把该 JSON 直接 POST 到
+`http://172.16.14.71:10004/rpc-api/reverse-callback/parse-reverse-geology`。
+可通过 `main(callback_url=...)` 覆盖地址，`callback_timeout` 调整超时，
+本地只生成文件时可传 `send_callback=False`。
+
 完整映射关系集中在 `parser_engine/callback_mapping.py` 的
 `CALLBACK_FIELD_MAPPING` 和 `CALLBACK_LAYER_FIELD_MAPPING` 两个字典中。字典每一项
 都有中文注释，键是接口字段，值是 result.json 来源字段，修改接口字段时无需到抽取
@@ -286,8 +291,8 @@ main(
 `handle_keyword_codes`。若报告结果为“中强腐蚀性”，接口却要求区分中腐蚀 `2`
 和强腐蚀 `3`，需传入 `ambiguous_corrosion_code=2` 或 `3`。
 
-缺失字段默认不写入 callback JSON，防止用 `null` 或伪造的 `0` 覆盖数据库已有值。
-未配置的含混枚举也会省略，并在主程序日志中提醒，不影响其他有效字段生成。
+callback JSON 默认保留完整接口字段；没有抽取到或没有映射上的字段返回 `null`，
+不会用伪造的 `0` 代替。未配置的含混枚举同样返回 `null`，并在主程序日志中提醒。
 
 土层业务结果还有一项统一预处理规则：如果第一层名称包含“耕土”且存在下一层，
 抽取引擎会先删除该耕土层，并把耕土厚度累加到下一层；此后的派生参数、最后一层处理、

@@ -204,9 +204,10 @@ table_fields:
     target_unit: MPa
     source_unit: MPa
 
+  # qc 为静力触探锥尖阻力，只保留作原始/明细指标，不等同于桩基参数 qpk。
   cone_tip_resistance:
     row_patterns:
-      - '^(?:qc|q_c|锥尖阻力|桩端阻力)'
+      - '^(?:qc|q_c|锥尖阻力)'
     target_unit: MPa
     source_unit: MPa
 
@@ -220,17 +221,12 @@ table_fields:
     row_patterns:
       - '^(?:n(?:63\.5)?|标贯|标准贯入|动力触探)'
 
-  # PRD 中 ρc 表示粉土黏粒比例，不能与 qc 或桩端阻力混用。
+  # ρc 为黏粒含量（%），用于粉土 ηb/ηd 判定；不能当成桩端阻力。
   clay_content:
     row_patterns:
       - '^(?:ρc|黏粒含量|粘粒含量)'
     target_unit: percent
     source_unit: percent
-
-  # 按当前 PRD 字段定义，将 ρc/pc 平均值作为桩端阻力结果输出。
-  pile_tip_resistance:
-    row_patterns:
-      - '^(?:ρc|pc|p_c|桩端阻力)'
 
 # 下列都是“每行一个土层”的普通矩阵表，公共方法按表头别名识别列后按层号合并。
 matrix_tables:
@@ -311,6 +307,8 @@ matrix_tables:
     header_rows: 2
     merge_operators:
       liquefaction_reduction_coefficient: minimum
+      # 同层多个孔只要有一条判为液化，该层即按液化层处理。
+      liquefaction_is_liquefied: maximum
     columns:
       layer_code:
         header_patterns: ['^(?:层号|编号)$']
@@ -331,6 +329,19 @@ matrix_tables:
           left: liquefaction_actual_n
           right: liquefaction_critical_n
           precision: 4
+      # 液化状态与折减系数分开保存。N/Nr<=1 判为当前土层液化；
+      # 即使某个深度区间的折减系数恰好为1，也不能把该层当成无液化。
+      liquefaction_is_liquefied:
+        rules:
+          - when:
+              field: liquefaction_ratio
+              lte: 1.0
+            value: true
+          - when:
+              field: liquefaction_ratio
+              gt: 1.0
+            value: false
+
       liquefaction_reduction_coefficient:
         default: 1.0
         rules:
@@ -545,8 +556,8 @@ derived_fields:
           all:
             - field: layer_name
               contains_any: [粉砂, 细砂]
-            - field: liquefaction_reduction_coefficient
-              lt: 1
+            - field: liquefaction_is_liquefied
+              eq: true
         value: 0
       - when:
           field: layer_name
@@ -556,13 +567,7 @@ derived_fields:
           field: layer_name
           contains_any: [粉砂, 细砂]
         value: 2.0
-      - when:
-          all:
-            - field: layer_name
-              contains_any: [粉土]
-            - field: clay_content
-              lt: 10
-        value: 0.5
+      # 当前业务口径：土层名含“粉土”时默认 ηb=0.3。
       - when:
           field: layer_name
           contains_any: [粉土]
@@ -592,8 +597,8 @@ derived_fields:
           all:
             - field: layer_name
               contains_any: [粉砂, 细砂]
-            - field: liquefaction_reduction_coefficient
-              lt: 1
+            - field: liquefaction_is_liquefied
+              eq: true
         value: 1.0
       - when:
           field: layer_name
@@ -603,13 +608,7 @@ derived_fields:
           field: layer_name
           contains_any: [粉砂, 细砂]
         value: 3.0
-      - when:
-          all:
-            - field: layer_name
-              contains_any: [粉土]
-            - field: clay_content
-              lt: 10
-        value: 2.0
+      # 当前业务口径：土层名含“粉土”时默认 ηd=1.5。
       - when:
           field: layer_name
           contains_any: [粉土]

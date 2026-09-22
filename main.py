@@ -8,11 +8,13 @@ from typing import Any
 
 from parser_engine import (
     BoreholeImageRecognizer,
+    DEFAULT_REVERSE_GEOLOGY_URL,
     DocumentParser,
     ParserConfig,
     ParserError,
     RapidOCRClient,
     extract_document,
+    post_reverse_geology_payload,
     write_reverse_geology_payload,
 )
 
@@ -330,14 +332,17 @@ def _log_mapping_warnings(output_path: Path, callback_payload: dict) -> None:
     """
     key_data = json.loads(output_path.read_text(encoding="utf-8")).get("key_data", {})
 
-    if key_data.get("foundation_treatment") and "handleKeyword" not in callback_payload:
-        logger.warning("接口映射未写入 handleKeyword：请传入实际枚举编码")
+    if (
+        key_data.get("foundation_treatment")
+        and callback_payload.get("handleKeyword") is None
+    ):
+        logger.warning("接口映射 handleKeyword 为空：请传入实际枚举编码")
 
     if (
         "中强" in str(key_data.get("water_soil_corrosion") or "")
-        and "waterSoilErosion" not in callback_payload
+        and callback_payload.get("waterSoilErosion") is None
     ):
-        logger.warning("接口映射未写入 waterSoilErosion：请确认中腐蚀2或强腐蚀3")
+        logger.warning("接口映射 waterSoilErosion 为空：请确认中腐蚀2或强腐蚀3")
 
 
 def parse_document(
@@ -396,6 +401,9 @@ def main(
     layer_ids: dict[str, int] | None = None,
     handle_keyword_codes: dict[str, int] | None = None,
     ambiguous_corrosion_code: int | None = None,
+    callback_url: str = DEFAULT_REVERSE_GEOLOGY_URL,
+    callback_timeout: float = 30.0,
+    send_callback: bool = True,
 ) -> dict:
     """解析地勘报告，并生成业务结果、查询明细和接口映射 JSON。
 
@@ -411,6 +419,10 @@ def main(
         handle_keyword_codes: 地基处理关键字到接口枚举的映射。接口文档没有
             给出编码，确认后传入，例如 ``{"岩溶": 1}``。
         ambiguous_corrosion_code: “中强腐蚀性”对应的接口编码，只能传2或3。
+        callback_url: 映射结果 POST 的逆向地质接口地址。
+        callback_timeout: HTTP 请求超时时间，单位为秒。
+        send_callback: 是否在生成映射 JSON 后立即 POST。默认开启；本地调试或
+            只生成文件时可设为 ``False``。
 
     Returns:
         已写入 ``*_callback.json`` 的接口请求体。
@@ -476,6 +488,23 @@ def main(
         logger.info("接口映射结果：%s", callback_output_path)
 
         _log_mapping_warnings(output_path, callback_payload)
+
+        if send_callback:
+            logger.info("发送逆向地质接口：%s", callback_url)
+            callback_response = post_reverse_geology_payload(
+                callback_payload,
+                api_url=callback_url,
+                timeout=callback_timeout,
+            )
+            logger.info(
+                "逆向地质接口响应：%s",
+                json.dumps(callback_response, ensure_ascii=False)
+                if isinstance(callback_response, (dict, list))
+                else callback_response,
+            )
+        else:
+            logger.info("逆向地质接口发送已关闭，仅生成映射结果")
+
         return callback_payload
 
     except (ParserError, FileNotFoundError, ValueError, RuntimeError) as exc:

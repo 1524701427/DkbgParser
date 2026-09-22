@@ -1323,7 +1323,16 @@ class BoreholeImageRecognizer:
             groups[str(record["layer_code"])].append(record)
         result = []
         for code, observations in groups.items():
-            values = [item["image_thickness"] for item in observations if item.get("image_thickness") is not None]
+            # depth_validation=False 表示 OCR 厚度与层底深度差明确冲突。
+            # 这类观测仍保留在 observations 中用于追溯，但不允许参与任何
+            # 平均值、最小值或最大值计算。
+            valid_observations = [
+                item
+                for item in observations
+                if item.get("image_thickness") is not None
+                and item.get("depth_validation") is not False
+            ]
+            values = [item["image_thickness"] for item in valid_observations]
             if not values:
                 continue
             if operator == "minimum":
@@ -1332,7 +1341,7 @@ class BoreholeImageRecognizer:
                 aggregated = max(values)
             else:
                 aggregated = sum(values) / len(values)
-            first = observations[0]
+            first = valid_observations[0]
             layer_name = next(
                 (item.get("layer_name") for item in observations if item.get("layer_name")),
                 None,
@@ -1340,7 +1349,7 @@ class BoreholeImageRecognizer:
             borehole_ids = sorted(
                 {
                     str(item["borehole_id"])
-                    for item in observations
+                    for item in valid_observations
                     if item.get("borehole_id")
                 },
                 key=BoreholeImageRecognizer._borehole_sort_key,
@@ -1348,7 +1357,7 @@ class BoreholeImageRecognizer:
             governing_borehole_ids = sorted(
                 {
                     str(item["borehole_id"])
-                    for item in observations
+                    for item in valid_observations
                     if item.get("borehole_id")
                     and item.get("image_thickness") == aggregated
                 },

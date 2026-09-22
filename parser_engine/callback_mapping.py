@@ -4,8 +4,15 @@ from collections.abc import Mapping
 import json
 from pathlib import Path
 from typing import Any
+import urllib.error
+import urllib.request
 
 from .extraction import merge_first_cultivated_soil_layer, select_foundation_parameter
+
+
+DEFAULT_REVERSE_GEOLOGY_URL = (
+    "http://172.16.14.71:10004/rpc-api/reverse-callback/parse-reverse-geology"
+)
 
 
 # 顶层字段映射：键是接口字段，值是 result.json 中的来源路径。
@@ -84,7 +91,7 @@ def build_reverse_geology_payload(
     layer_ids: Mapping[str, int] | None = None,
     handle_keyword_codes: Mapping[str, int] | None = None,
     ambiguous_corrosion_code: int | None = None,
-    omit_missing: bool = True,
+    omit_missing: bool = False,
     strict_enums: bool = False,
 ) -> dict[str, Any]:
     """把精简抽取结果转换为逆向更新地质数据接口的请求体。
@@ -100,10 +107,11 @@ def build_reverse_geology_payload(
             检出处理关键字时必须由调用方明确提供。
         ambiguous_corrosion_code: 当前结果为“中强腐蚀性”时采用的接口编码。
             接口把中腐蚀和强腐蚀分为2、3，无法从合并值判断时必须明确指定。
-        omit_missing: 是否删除值为 ``None`` 的可选字段，默认删除，避免用空值
-            覆盖数据库中的已有数据。
-        strict_enums: 枚举无法确定时是否抛出异常。默认不抛出并省略该可选字段，
-            便于主流程持续生成接口 JSON；接口联调校验时可设为 ``True``。
+        omit_missing: 是否删除值为 ``None`` 的可选字段。默认不删除，保证接口
+            始终返回完整映射结构；没有抽取到或没有映射上的字段返回 JSON ``null``。
+            旧调用方如仍要求省略空字段，可显式传入 ``True``。
+        strict_enums: 枚举无法确定时是否抛出异常。默认不抛出，并把无法映射的
+            枚举字段保留为 ``None``；接口联调校验时可设为 ``True``。
 
     Returns:
         可直接作为 ``/rpc-api/reverse-callback/parse-reverse-geology`` 请求体
@@ -183,6 +191,73 @@ def build_reverse_geology_payload(
         }
     )
     return _omit_none(payload) if omit_missing else payload
+
+
+def post_reverse_geology_payload(
+    payload: Mapping[str, Any],
+    *,
+    api_url: str = DEFAULT_REVERSE_GEOLOGY_URL,
+    timeout: float = 30.0,
+) -> Any:
+    """把映射后的地质结果作为 JSON 直接 POST 到逆向回调接口。
+
+    Args:
+        payload: ``build_reverse_geology_payload()`` 生成的完整接口请求体。
+        api_url: 逆向地质回调地址。
+        timeout: HTTP 请求超时时间，单位为秒。
+
+    Returns:
+        接口响应。响应为 JSON 时返回解析后的对象；普通文本按字符串返回；
+        空响应返回 ``None``。
+
+    Raises:
+        RuntimeError: HTTP 状态异常、网络不可达或请求超时。
+        ValueError: timeout 非正数或 api_url 为空。
+    """
+    url = str(api_url or "").strip()
+    if not url:
+        raise ValueError("逆向地质回调地址不能为空")
+    if timeout <= 0:
+        raise ValueError("接口请求超时时间必须大于0")
+
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=float(timeout)) as response:
+            status = getattr(response, "status", None) or response.getcode()
+            response_text = response.read().decode("utf-8", errors="replace").strip()
+    except urllib.error.HTTPError as exc:
+        try:
+            error_text = exc.read().decode("utf-8", errors="replace").strip()
+        except Exception:
+            error_text = ""
+        detail = f": {error_text}" if error_text else ""
+        raise RuntimeError(
+            f"逆向地质接口请求失败，HTTP {exc.code}{detail}"
+        ) from exc
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        raise RuntimeError(f"逆向地质接口请求失败: {reason}") from exc
+    except TimeoutError as exc:
+        raise RuntimeError("逆向地质接口请求超时") from exc
+
+    if int(status) < 200 or int(status) >= 300:
+        raise RuntimeError(
+            f"逆向地质接口请求失败，HTTP {status}: {response_text}"
+        )
+    if not response_text:
+        return None
+    try:
+        return json.loads(response_text)
+    except json.JSONDecodeError:
+        return response_text
 
 
 def write_reverse_geology_payload(
@@ -321,12 +396,12 @@ def _select_foundation_value(value: Any, layer_name: str) -> Any:
 
 def _lookup_layer_id(
     layer_ids: Mapping[str, int], layer_code: str, layer_name: str, display_name: str | None
-) -> int:
-    """依次按完整名称、层号和层名查找已有土层ID。"""
+) -> int | None:
+    """依次按完整名称、层号和层名查找已有土层ID；未映射时返回空值。"""
     for key in (display_name, layer_code, layer_name):
         if key and key in layer_ids:
             return int(layer_ids[key])
-    return 0
+    return None
 
 
 def _handle_keyword_code(

@@ -15,6 +15,7 @@ from parser_engine.extraction import (
 )
 from parser_engine.callback_mapping import (
     build_reverse_geology_payload,
+    post_reverse_geology_payload,
     write_reverse_geology_payload,
 )
 from parser_engine.image_recognition import (
@@ -162,8 +163,8 @@ def test_build_reverse_geology_payload_rejects_multiple_handle_keyword_codes():
         )
 
 
-def test_build_reverse_geology_payload_omits_missing_values():
-    """验证缺失结果不使用零值覆盖接口中的已有业务数据。"""
+def test_build_reverse_geology_payload_keeps_missing_values_as_null():
+    """验证最终接口映射固定返回字段，未映射值使用 null。"""
     payload = build_reverse_geology_payload(
         {"geotechnical_layer_parameters": []},
         project_id=8,
@@ -171,8 +172,132 @@ def test_build_reverse_geology_payload_omits_missing_values():
 
     assert payload["projectId"] == 8
     assert payload["handleKeyword"] == 0
+    assert payload["groundwaterDepth"] is None
+    assert payload["epa"] is None
+    assert payload["ld"] is None
+    assert payload["tg"] is None
+    assert payload["regionalGeologyInfo"] is None
+    assert payload["waterSoilErosion"] is None
+    assert payload["geologyRockSoilsReq"] == []
+
+
+def test_callback_layer_keeps_unmapped_fields_as_null():
+    """验证土层接口字段未抽取或ID未匹配时保留为 null。"""
+    result = {
+        "geotechnical_layer_parameters": [
+            {
+                "layer_code": "②",
+                "layer_name": "粉质黏土",
+                "thickness": 2.5,
+            }
+        ]
+    }
+
+    payload = build_reverse_geology_payload(result, project_id=1)
+    layer = payload["geologyRockSoilsReq"][0]
+
+    assert layer["name"] == "②粉质黏土"
+    assert layer["id"] is None
+    assert layer["thickness"] == 2.5
+    assert layer["gravityDensity"] is None
+    assert layer["bearingCapacity"] is None
+    assert layer["standardPileEndResistance"] is None
+    assert layer["standardPileSideResistance"] is None
+
+
+def test_callback_can_still_omit_missing_values_when_explicitly_requested():
+    """验证旧调用方仍可显式选择省略空字段。"""
+    payload = build_reverse_geology_payload(
+        {"geotechnical_layer_parameters": []},
+        project_id=8,
+        omit_missing=True,
+    )
+
+    assert payload["projectId"] == 8
     assert "groundwaterDepth" not in payload
     assert "epa" not in payload
+
+
+def test_post_reverse_geology_payload_sends_direct_json_body(monkeypatch):
+    """验证映射结果直接以 JSON POST 到逆向地质接口。"""
+    captured = {}
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def getcode(self):
+            return self.status
+
+        def read(self):
+            return json.dumps(
+                {"code": 0, "message": "success"},
+                ensure_ascii=False,
+            ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["method"] = request.get_method()
+        captured["content_type"] = request.headers.get("Content-type")
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        "parser_engine.callback_mapping.urllib.request.urlopen",
+        fake_urlopen,
+    )
+
+    payload = {
+        "projectId": 100,
+        "epa": None,
+        "geologyRockSoilsReq": [{"id": None, "name": "②粉土"}],
+    }
+    response = post_reverse_geology_payload(
+        payload,
+        api_url="http://callback.test/rpc-api/reverse-callback/parse-reverse-geology",
+        timeout=12,
+    )
+
+    assert captured["url"].endswith(
+        "/rpc-api/reverse-callback/parse-reverse-geology"
+    )
+    assert captured["method"] == "POST"
+    assert captured["content_type"] == "application/json; charset=utf-8"
+    assert captured["body"] == payload
+    assert captured["timeout"] == 12.0
+    assert response == {"code": 0, "message": "success"}
+
+
+def test_post_reverse_geology_payload_raises_on_http_error(monkeypatch):
+    """验证回调接口 HTTP 失败时主流程能得到明确异常。"""
+    import io
+    import urllib.error
+
+    def fail_urlopen(request, timeout):
+        raise urllib.error.HTTPError(
+            request.full_url,
+            500,
+            "Internal Server Error",
+            hdrs=None,
+            fp=io.BytesIO(b'{"message":"failed"}'),
+        )
+
+    monkeypatch.setattr(
+        "parser_engine.callback_mapping.urllib.request.urlopen",
+        fail_urlopen,
+    )
+
+    with pytest.raises(RuntimeError, match="HTTP 500"):
+        post_reverse_geology_payload(
+            {"projectId": 1},
+            api_url="http://callback.test/callback",
+        )
 
 
 def test_write_reverse_geology_payload_reads_result_file(tmp_path: Path):
@@ -421,7 +546,6 @@ def test_compact_result_removes_query_details():
                         "friction_angle": 19.5,
                         "compression_modulus": 6.03,
                         "side_friction": 51.0,
-                        "pile_tip_resistance": 8.9,
                         "poisson_ratio": 0.35,
                         "bearing_capacity": 120.0,
                         "evidence": {"text": "很长的原文"},
@@ -466,7 +590,6 @@ def test_compact_result_removes_query_details():
         "friction_angle": 19.5,
         "compression_modulus_es1_2": 6.03,
         "side_friction_fs": 51.0,
-        "pile_tip_resistance_rho_c": 8.9,
         "poisson_ratio": 0.35,
         "bearing_capacity_fak": 120.0,
     }
@@ -1081,8 +1204,56 @@ def test_layer_table_average_values_and_density_conversion():
     assert second["side_friction"] == 51.0
     assert second["cone_tip_resistance"] == 3.354
     assert second["clay_content"] == 8.9
-    assert second["pile_tip_resistance"] == 8.9
+    assert "pile_tip_resistance" not in second
     assert second["evidence"]["table_fields"]["gravity_density"]["multiplier"] == 9.8
+
+
+def test_physical_statistics_table_does_not_map_rho_c_or_qc_to_pile_tip_resistance():
+    """验证物理统计表中的ρc/qc不会冒充桩基参数qpk。"""
+    table = TableData(
+        rows=7,
+        columns=4,
+        cells=[
+            TableCell(0, 0, "项目"),
+            TableCell(0, 1, "最小值"),
+            TableCell(0, 2, "最大值"),
+            TableCell(0, 3, "平均值"),
+            TableCell(1, 0, "γ（kN/m³）"),
+            TableCell(1, 3, "19.35"),
+            TableCell(2, 0, "C（kPa）"),
+            TableCell(2, 3, "8.9"),
+            TableCell(3, 0, "Φ（度）"),
+            TableCell(3, 3, "19.5"),
+            TableCell(4, 0, "Es1-2（MPa）"),
+            TableCell(4, 3, "6.03"),
+            TableCell(5, 0, "fs（kPa）"),
+            TableCell(5, 3, "51"),
+            TableCell(6, 0, "ρc"),
+            TableCell(6, 3, "8.9"),
+        ],
+    )
+    document = DocumentModel(
+        source_path="report.pdf",
+        source_format="pdf",
+        parser_backend="test",
+        blocks=[
+            DocumentBlock("h", "heading", "地层岩性分布特征", page=1),
+            DocumentBlock("l", "paragraph", "②层粉土：厚度1.0m。", page=1),
+            DocumentBlock("t", "table", table=table, page=2),
+        ],
+    )
+
+    record = ExtractionEngine.from_files("configs/layer_thickness.yaml").extract_all(document)[
+        "tasks"
+    ]["layer_thickness"]["records"][0]
+
+    assert record["gravity_density"] == 19.35
+    assert record["cohesion"] == 8.9
+    assert record["friction_angle"] == 19.5
+    assert record["compression_modulus"] == 6.03
+    assert record["side_friction"] == 51.0
+    assert record["clay_content"] == 8.9
+    assert "pile_tip_resistance" not in record
 
 
 def test_physical_table_prefers_average_values_with_compact_unit_labels():
@@ -1597,12 +1768,109 @@ def test_missing_strength_parameters_use_layer_type_defaults(
     }
 
 
+def test_silt_layer_uses_fixed_default_eta_values_even_when_clay_content_is_low():
+    """验证土层名含粉土时固定采用 ηb=0.3、ηd=1.5。"""
+    engine = ExtractionEngine.from_files("configs/layer_thickness.yaml")
+    record = {
+        "layer_name": "粉土",
+        "clay_content": 8.9,
+    }
+
+    engine._apply_derived_fields([record], engine.configs[0]["derived_fields"])
+
+    assert record["width_bearing_coefficient"] == 0.3
+    assert record["depth_bearing_coefficient"] == 1.5
+
+
+def test_pile_parameter_table_selects_qsik_qpk_by_current_layer_type():
+    """验证桩侧/桩端阻力仅来自桩基参数表，并按当前土层选择对应桩型列。"""
+    table = TableData(
+        rows=4,
+        columns=6,
+        cells=[
+            TableCell(0, 0, "土层名称", column_span=2),
+            TableCell(0, 2, "钻孔灌注桩", column_span=2),
+            TableCell(0, 4, "预制桩", column_span=2),
+            TableCell(1, 0, "土层名称", column_span=2),
+            TableCell(1, 2, "桩的侧阻力标准值 qsik（kPa）"),
+            TableCell(1, 3, "桩的端阻力标准值 qpk（kPa）"),
+            TableCell(1, 4, "桩的侧阻力标准值 qsik（kPa）"),
+            TableCell(1, 5, "桩的端阻力标准值 qpk（kPa）"),
+            TableCell(2, 0, "⑦"),
+            TableCell(2, 1, "粉质黏土"),
+            TableCell(2, 2, "76"),
+            TableCell(2, 3, "1000"),
+            TableCell(2, 4, "78"),
+            TableCell(2, 5, "2600"),
+            TableCell(3, 0, "⑧"),
+            TableCell(3, 1, "中风化灰岩"),
+            TableCell(3, 2, "80"),
+            TableCell(3, 3, "1500"),
+            TableCell(3, 4, "82"),
+            TableCell(3, 5, "3200"),
+        ],
+    )
+    document = DocumentModel(
+        source_path="report.pdf",
+        source_format="pdf",
+        parser_backend="test",
+        blocks=[
+            DocumentBlock("h", "heading", "地层岩性分布特征", page=1),
+            DocumentBlock("l7", "paragraph", "⑦层粉质黏土：厚度1.0m。", page=1),
+            DocumentBlock("l8", "paragraph", "⑧层中风化灰岩：厚度2.0m。", page=1),
+            DocumentBlock("t", "table", "桩基参数 钻孔灌注桩 预制桩", table=table, page=2),
+        ],
+    )
+
+    selected = ExtractionEngine.from_files("configs/layer_thickness.yaml").extract_all(document)[
+        "tasks"
+    ]["layer_thickness"]["selected_records"]
+    by_code = {record["layer_code"]: record for record in selected}
+
+    compact = _compact_result(
+        {
+            "tasks": {
+                "layer_thickness": {
+                    "mode": "layer_records",
+                    "selected_records": selected,
+                }
+            }
+        }
+    )["geotechnical_layer_parameters"]
+    compact_by_code = {record["layer_code"]: record for record in compact}
+
+    # 粉质黏土不含“岩/石”→预制桩列。
+    assert compact_by_code["⑦"]["pile_side_resistance"] == 78.0
+    assert compact_by_code["⑦"]["pile_tip_resistance"] == 2600.0
+    # 中风化灰岩含“岩”→灌注桩列。
+    assert compact_by_code["⑧"]["pile_side_resistance"] == 80.0
+    assert compact_by_code["⑧"]["pile_tip_resistance"] == 1500.0
+    assert by_code["⑦"]["precast_side_resistance"] == 78.0
+    assert by_code["⑧"]["cast_in_place_tip_resistance"] == 1500.0
+
+
 def test_liquefied_fine_sand_uses_prd_bearing_correction_coefficients():
     """验证液化粉砂/细砂按 PRD 取 ηb=0、ηd=1。"""
     engine = ExtractionEngine.from_files("configs/layer_thickness.yaml")
     record = {
         "layer_name": "粉砂",
+        "liquefaction_is_liquefied": True,
         "liquefaction_reduction_coefficient": 0.666667,
+    }
+
+    engine._apply_derived_fields([record], engine.configs[0]["derived_fields"])
+
+    assert record["width_bearing_coefficient"] == 0
+    assert record["depth_bearing_coefficient"] == 1.0
+
+
+def test_liquefied_fine_sand_with_reduction_factor_one_still_uses_zero_one():
+    """验证已液化但折减系数恰好为1时，ηb/ηd仍按液化规则取0/1。"""
+    engine = ExtractionEngine.from_files("configs/layer_thickness.yaml")
+    record = {
+        "layer_name": "细砂",
+        "liquefaction_is_liquefied": True,
+        "liquefaction_reduction_coefficient": 1.0,
     }
 
     engine._apply_derived_fields([record], engine.configs[0]["derived_fields"])
@@ -1616,6 +1884,7 @@ def test_non_liquefied_fine_sand_keeps_original_bearing_correction_coefficients(
     engine = ExtractionEngine.from_files("configs/layer_thickness.yaml")
     record = {
         "layer_name": "细砂",
+        "liquefaction_is_liquefied": False,
         "liquefaction_reduction_coefficient": 1.0,
     }
 
@@ -2172,6 +2441,77 @@ def test_borehole_aggregation_keeps_source_and_governing_ids():
 
     assert result["borehole_ids"] == ["F03", "F10"]
     assert result["governing_borehole_ids"] == ["F03"]
+
+
+def test_borehole_aggregation_excludes_depth_validation_failures():
+    """验证深度校验失败的 OCR 厚度保留追溯，但不参与平均值。"""
+    records = [
+        {
+            "layer_code": "①",
+            "main_layer_code": "①",
+            "layer_name": "粉质黏土",
+            "image_thickness": 2.0,
+            "depth_validation": True,
+            "borehole_id": "F01",
+            "evidence": {"page": 10},
+        },
+        {
+            "layer_code": "①",
+            "main_layer_code": "①",
+            "layer_name": "粉质黏土",
+            "image_thickness": 20.0,
+            "depth_validation": False,
+            "borehole_id": "F02",
+            "evidence": {"page": 11},
+        },
+    ]
+
+    result = BoreholeImageRecognizer._aggregate(records, "average")[0]
+
+    assert result["image_average"] == 2.0
+    assert result["observation_count"] == 1
+    assert result["borehole_ids"] == ["F01"]
+    assert len(result["observations"]) == 2
+
+
+@pytest.mark.parametrize(("operator", "expected"), [("minimum", 2.0), ("maximum", 3.0)])
+def test_borehole_aggregation_excludes_invalid_values_for_min_and_max(
+    operator: str,
+    expected: float,
+):
+    """验证深度校验失败值不会污染最小值或最大值。"""
+    records = [
+        {
+            "layer_code": "①",
+            "main_layer_code": "①",
+            "image_thickness": 2.0,
+            "depth_validation": True,
+            "borehole_id": "F01",
+            "evidence": {"page": 10},
+        },
+        {
+            "layer_code": "①",
+            "main_layer_code": "①",
+            "image_thickness": 3.0,
+            "depth_validation": True,
+            "borehole_id": "F02",
+            "evidence": {"page": 11},
+        },
+        {
+            "layer_code": "①",
+            "main_layer_code": "①",
+            "image_thickness": 99.0 if operator == "maximum" else 0.1,
+            "depth_validation": False,
+            "borehole_id": "F03",
+            "evidence": {"page": 12},
+        },
+    ]
+
+    result = BoreholeImageRecognizer._aggregate(records, operator)[0]
+
+    assert result["image_average"] == expected
+    assert result["observation_count"] == 2
+    assert "F03" not in result["borehole_ids"]
 
 
 def test_image_fallback_detects_partial_layer_results():

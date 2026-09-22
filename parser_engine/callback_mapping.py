@@ -84,7 +84,7 @@ def build_reverse_geology_payload(
     layer_ids: Mapping[str, int] | None = None,
     handle_keyword_codes: Mapping[str, int] | None = None,
     ambiguous_corrosion_code: int | None = None,
-    omit_missing: bool = True,
+    omit_missing: bool = False,
     strict_enums: bool = False,
 ) -> dict[str, Any]:
     """把精简抽取结果转换为逆向更新地质数据接口的请求体。
@@ -100,10 +100,11 @@ def build_reverse_geology_payload(
             检出处理关键字时必须由调用方明确提供。
         ambiguous_corrosion_code: 当前结果为“中强腐蚀性”时采用的接口编码。
             接口把中腐蚀和强腐蚀分为2、3，无法从合并值判断时必须明确指定。
-        omit_missing: 是否删除值为 ``None`` 的可选字段，默认删除，避免用空值
-            覆盖数据库中的已有数据。
-        strict_enums: 枚举无法确定时是否抛出异常。默认不抛出并省略该可选字段，
-            便于主流程持续生成接口 JSON；接口联调校验时可设为 ``True``。
+        omit_missing: 是否删除值为 ``None`` 的可选字段。默认不删除，保证接口
+            始终返回完整映射结构；没有抽取到或没有映射上的字段返回 JSON ``null``。
+            旧调用方如仍要求省略空字段，可显式传入 ``True``。
+        strict_enums: 枚举无法确定时是否抛出异常。默认不抛出，并把无法映射的
+            枚举字段保留为 ``None``；接口联调校验时可设为 ``True``。
 
     Returns:
         可直接作为 ``/rpc-api/reverse-callback/parse-reverse-geology`` 请求体
@@ -321,12 +322,12 @@ def _select_foundation_value(value: Any, layer_name: str) -> Any:
 
 def _lookup_layer_id(
     layer_ids: Mapping[str, int], layer_code: str, layer_name: str, display_name: str | None
-) -> int:
-    """依次按完整名称、层号和层名查找已有土层ID。"""
+) -> int | None:
+    """依次按完整名称、层号和层名查找已有土层ID；未映射时返回空值。"""
     for key in (display_name, layer_code, layer_name):
         if key and key in layer_ids:
             return int(layer_ids[key])
-    return 0
+    return None
 
 
 def _handle_keyword_code(

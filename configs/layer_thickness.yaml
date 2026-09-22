@@ -540,6 +540,14 @@ derived_fields:
   width_bearing_coefficient:
     default: 0
     rules:
+      # PRD：粉砂、细砂无液化时 ηb=2.0；确认液化的对应土层 ηb=0。
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [粉砂, 细砂]
+            - field: liquefaction_reduction_coefficient
+              lt: 1
+        value: 0
       - when:
           field: layer_name
           contains_any: [中砂, 粗砂, 砾砂, 碎石, 岩]
@@ -579,6 +587,14 @@ derived_fields:
   depth_bearing_coefficient:
     default: 1.0
     rules:
+      # PRD：粉砂、细砂无液化时 ηd=3.0；确认液化的对应土层 ηd=1。
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [粉砂, 细砂]
+            - field: liquefaction_reduction_coefficient
+              lt: 1
+        value: 1.0
       - when:
           field: layer_name
           contains_any: [中砂, 粗砂, 砾砂, 碎石, 岩]

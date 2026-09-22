@@ -1597,6 +1597,34 @@ def test_missing_strength_parameters_use_layer_type_defaults(
     }
 
 
+def test_liquefied_fine_sand_uses_prd_bearing_correction_coefficients():
+    """验证液化粉砂/细砂按 PRD 取 ηb=0、ηd=1。"""
+    engine = ExtractionEngine.from_files("configs/layer_thickness.yaml")
+    record = {
+        "layer_name": "粉砂",
+        "liquefaction_reduction_coefficient": 0.666667,
+    }
+
+    engine._apply_derived_fields([record], engine.configs[0]["derived_fields"])
+
+    assert record["width_bearing_coefficient"] == 0
+    assert record["depth_bearing_coefficient"] == 1.0
+
+
+def test_non_liquefied_fine_sand_keeps_original_bearing_correction_coefficients():
+    """验证无液化粉砂/细砂仍保持 ηb=2、ηd=3。"""
+    engine = ExtractionEngine.from_files("configs/layer_thickness.yaml")
+    record = {
+        "layer_name": "细砂",
+        "liquefaction_reduction_coefficient": 1.0,
+    }
+
+    engine._apply_derived_fields([record], engine.configs[0]["derived_fields"])
+
+    assert record["width_bearing_coefficient"] == 2.0
+    assert record["depth_bearing_coefficient"] == 3.0
+
+
 def test_layer_type_defaults_do_not_override_report_or_recommended_values():
     """验证原文平均值和推荐值均优先于土类型缺省规则。"""
     engine = ExtractionEngine.from_files("configs/layer_thickness.yaml")

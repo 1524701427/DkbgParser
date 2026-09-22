@@ -567,13 +567,7 @@ derived_fields:
           field: layer_name
           contains_any: [粉砂, 细砂]
         value: 2.0
-      - when:
-          all:
-            - field: layer_name
-              contains_any: [粉土]
-            - field: clay_content
-              lt: 10
-        value: 0.5
+      # 当前业务口径：土层名含“粉土”时默认 ηb=0.3。
       - when:
           field: layer_name
           contains_any: [粉土]
@@ -614,13 +608,7 @@ derived_fields:
           field: layer_name
           contains_any: [粉砂, 细砂]
         value: 3.0
-      - when:
-          all:
-            - field: layer_name
-              contains_any: [粉土]
-            - field: clay_content
-              lt: 10
-        value: 2.0
+      # 当前业务口径：土层名含“粉土”时默认 ηd=1.5。
       - when:
           field: layer_name
           contains_any: [粉土]

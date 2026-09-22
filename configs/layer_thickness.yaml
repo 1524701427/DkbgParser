@@ -1,0 +1,860 @@
+name: layer_thickness
+version: "1.1"
+mode: layer_records
+
+# 先查找目标章节；找不到时扫描全文，适合不同单位编制的报告。
+section:
+  aliases:
+    - 场地地层结构及岩土物理力学性质
+    - 地层岩性
+    - 地层岩性分布特征
+    - 场地地层结构
+    - 地层结构和岩性特征
+    - 岩土层特征
+    # 部分简版报告仅使用“3.4 地层”作为章节标题。
+    - 地层
+  stop_at_next_heading: true
+  fallback_whole_document: true
+
+# 以层号段落为锚点，合并相邻的层名、厚度描述和物理力学统计表。
+record:
+  merge_blocks: true
+  start_patterns:
+    - '^\s*层\s*[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳](?:[-－]?\d+|[a-zA-Z])?\s*'
+    # 有些报告把亚层写成“②1粉土”，省略连接符和“层”字。
+    - '^\s*[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳](?:[-－]?\d+|[a-zA-Z])?\s*层?'
+    - '^\s*第\s*\d+(?:-\d+|[a-zA-Z])?\s*层'
+    - '^\s*\d+(?:-\d+|[a-zA-Z])?\s*层'
+  split_pattern: '[\n；;]+'
+  match_patterns:
+    - '层\s*[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳](?:[-－]?\d+|[a-zA-Z])?'
+    - '[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳](?:[-－]?\d+|[a-zA-Z])?\s*层?'
+    - '\d+(?:-\d+|[a-zA-Z])?\s*层'
+
+# 文本没有厚度时，启用已经接入的钻孔柱状图 OCR 兜底。
+image_fallback:
+  enabled: true
+  # 已识别到部分正文土层，但报告还包含钻孔柱状图时继续 OCR 补漏。
+  fallback_when_diagram_pages_exist: true
+  # 正文只识别到部分土层时也执行 OCR 补漏；数量从报告原文声明中推断。
+  completeness:
+    expected_count_patterns:
+      - pattern: '主层(?:共)?划分为\s*(?P<main>\d+)\s*层[\s\S]{0,30}?夹层\s*(?P<interlayer>\d+)\s*层'
+        sum_groups: [main, interlayer]
+  # OCR 阈值、列位置和岩土名称均可按报告版式覆盖，无需修改 Python。
+  ocr:
+    minimum_confidence: 0.45
+    layer_code_max_x_ratio: 0.22
+    bottom_depth_x_ratio: 0.315
+    thickness_x_ratio: 0.355
+    column_tolerance_ratio: 0.035
+    soil_name_patterns:
+      - '杂填土|素填土|填土|耕土'
+      - '粉质黏土|粉质粘土|黏土|粘土|粉土|淤泥质黏土|淤泥质粘土'
+      - '粉砂|细砂|中砂|粗砂|砾砂|圆砾|角砾|卵石|碎石'
+      - '(?:全|强|中等|中|微)风化[^，,；;：: ]*'
+  # 特定报告页码可在该报告自己的配置中增加 pages，例如 pages: [17, 18]。
+  aggregate: average
+  fallback_last_pages: 5
+  # 同时扫描低文本的整页图片附件，再由钻孔编号和层厚记录排除普通插图。
+  use_image_blocks: true
+  image_page_max_text: 150
+  page_keywords:
+    - 钻孔柱状图
+    - 钻孔柱状剖面图
+    - 勘探点编号
+    - 分层厚度
+    - 层底深度
+    - 层底标高
+  render:
+    dpi: 350
+  validation:
+    depth_tolerance: 0.05
+  prompt: |
+    识别图片中的钻孔柱状图，只返回一个 JSON 对象，不要返回 Markdown。
+    JSON 格式：
+    {"borehole_id":"钻孔编号", "layers":[{"layer_code":"层号", "layer_name":"岩土名称", "bottom_elevation":数值或null, "bottom_depth":数值或null, "thickness":数值或null, "description":"岩性描述", "confidence":0到1}]}
+    必须按照图片中从上到下的岩土层顺序输出。
+    无法确认的字段使用 null，禁止猜测，数字不要包含单位。
+
+fields:
+  layer_code:
+    patterns:
+      - '层\s*(?P<value>[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳](?:[-－]?\d+|[a-zA-Z])?)'
+      - '(?P<value>[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳](?:[-－]?\d+|[a-zA-Z])?)\s*层?'
+      - '第?\s*(?P<value>\d+(?:-\d+|[a-zA-Z])?)\s*层'
+    transforms:
+      - strip_spaces
+      - normalize_layer_code
+
+  # main_layer_code 只用于判断地质顺序中的最后一个主层。
+  main_layer_code:
+    source: layer_code
+    transform: main_layer_code
+
+  layer_name:
+    patterns:
+      # 支持“②砂砾岩（全风化）：”等带中文括号的层名。
+      - '[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳](?:[-－]?\d+|[a-zA-Z])?\s*层?\s*(?P<value>[\u4e00-\u9fff（）()]{1,30})(?=\s*[：:,，])'
+      - '层\s*[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳](?:[-－]?\d+|[a-zA-Z])?\s*(?P<value>[\u4e00-\u9fff]{1,15})(?=\s*[(:，,])'
+      - '[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳](?:[-－]?\d+|[a-zA-Z])?\s*层?\s*(?P<value>[\u4e00-\u9fff]{1,15})(?=\s*[(:，,])'
+      - '层?\s*[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳](?:[-－]?\d+|[a-zA-Z])?\s*(?P<value>[\u4e00-\u9fff]{1,15}?)(?=\s*(?:原位|物理|工程|统计|$))'
+      - '\d+(?:-\d+|[a-zA-Z])?\s*层\s*(?P<value>[\u4e00-\u9fff]{1,15})(?=\s*[(:，,])'
+    transforms:
+      - strip_spaces
+
+  geological_age:
+    patterns:
+      # 兼容 Q4al、Q4el+dl、P1、J、K、Pt 等常见地层年代写法。
+      - '\((?P<value>(?:Q|N|E|K|J|T|P|C|D|S|O|Є|Pt|Ar)\d*\s*[a-zA-Z]*(?:\+[a-zA-Z]+)*)\)'
+
+  thickness_min:
+    type: number
+    patterns:
+      - '(?:层厚|厚度)(?:一般|为|约|在)?\s*[:：]?\s*(?P<value>\d+(?:\.\d+)?)\s*m?\s*[~至到-]'
+      - '(?:层厚|厚度)(?:分别)?(?:为)?\s*[:：]?\s*(?P<value>\d+(?:\.\d+)?)\s*m\s*(?:和|及|、)'
+
+  thickness_max:
+    type: number
+    patterns:
+      - '(?:层厚|厚度)(?:一般|为|约|在)?\s*[:：]?\s*\d+(?:\.\d+)?\s*m?\s*[~至到-]\s*(?P<value>\d+(?:\.\d+)?)'
+      - '(?:层厚|厚度)(?:分别)?(?:为)?\s*[:：]?\s*\d+(?:\.\d+)?\s*m\s*(?:和|及|、)\s*(?P<value>\d+(?:\.\d+)?)'
+
+  # 只有一个厚度值时按实测层厚使用，不冒充“平均厚度”。
+  thickness_exact:
+    type: number
+    patterns:
+      - '(?:层厚|厚度)(?:一般)?(?:为|约)?\s*[:：]?\s*(?P<value>\d+(?:\.\d+)?)\s*m(?!\s*[~至到-])'
+
+  thickness_average:
+    type: number
+    patterns:
+      - '厚度.{0,30}?平\s*均(?:厚度|层厚|值)?(?:为)?\s*(?P<value>\d+(?:\.\d+)?)'
+
+  maximum_exposed:
+    type: number
+    patterns:
+      - '最大揭露(?:厚度|层厚)?(?:为)?\s*[:：]?\s*(?P<value>\d+(?:\.\d+)?)'
+      - '(?:钻孔)?揭露最大(?:厚度|层厚)?(?:为)?\s*[:：]?\s*(?P<value>\d+(?:\.\d+)?)'
+      - '未揭穿.{0,10}揭露厚度(?:为)?\s*[:：]?\s*(?P<value>\d+(?:\.\d+)?)'
+
+# 物理力学统计表统一读取“平均值”列。跨页续表没有重复表头时，按常见格式
+# 回退到第 2 列（下标 1）；字段行仍须命中 row_patterns，避免误读普通表格。
+table_options:
+  average_aliases: [平均值, 平均, 均值]
+  fallback_average_column: 1
+
+table_fields:
+  water_content:
+    row_patterns:
+      - '^(?:天然含水量|含水量|w(?:%|\(|$))'
+    target_unit: percent
+    source_unit: percent
+
+  gravity_density:
+    row_patterns:
+      - '^(?:γ|重力密度|天然重度|天然密度|容重|容度|重度|密度)'
+    target_unit: kN/m3
+    source_unit: kN/m3
+    # 当原表使用质量密度 g/cm3 或 t/m3 时，换算为重力密度。
+    unit_rules:
+      - pattern: '(?:g/cm3|g·cm-3|t/m3)'
+        source_unit: g/cm3
+        multiplier: 9.8
+
+  void_ratio:
+    row_patterns:
+      - '^(?:天然孔隙比|孔隙比|e(?:\(|$))'
+
+  liquid_limit:
+    row_patterns:
+      - '^(?:wl|液限)'
+    target_unit: percent
+    source_unit: percent
+
+  plastic_limit:
+    row_patterns:
+      - '^(?:wp|塑限)'
+    target_unit: percent
+    source_unit: percent
+
+  plasticity_index:
+    row_patterns:
+      - '^(?:ip|塑性指数)'
+
+  liquid_index:
+    row_patterns:
+      - '^(?:il|液性指数|Ⅱ)'
+
+  cohesion:
+    row_patterns:
+      - '^(?:内聚力|黏聚力|粘聚力|c(?:q|k|qk)?)(?:.*kpa|\(|$)'
+    target_unit: kPa
+    source_unit: kPa
+
+  friction_angle:
+    row_patterns:
+      - '^(?:摩擦角|内摩擦角|[φΦ])'
+    target_unit: degree
+    source_unit: degree
+
+  compression_modulus:
+    row_patterns:
+      - '^(?:压缩模量|es1-2|es)'
+    target_unit: MPa
+    source_unit: MPa
+
+  cone_tip_resistance:
+    row_patterns:
+      - '^(?:qc|q_c|锥尖阻力|桩端阻力)'
+    target_unit: MPa
+    source_unit: MPa
+
+  side_friction:
+    row_patterns:
+      - '^(?:侧摩阻力|侧壁摩阻力|fs|f_s)'
+    target_unit: kPa
+    source_unit: kPa
+
+  standard_penetration_n:
+    row_patterns:
+      - '^(?:n(?:63\.5)?|标贯|标准贯入|动力触探)'
+
+  # PRD 中 ρc 表示粉土黏粒比例，不能与 qc 或桩端阻力混用。
+  clay_content:
+    row_patterns:
+      - '^(?:ρc|黏粒含量|粘粒含量)'
+    target_unit: percent
+    source_unit: percent
+
+  # 按当前 PRD 字段定义，将 ρc/pc 平均值作为桩端阻力结果输出。
+  pile_tip_resistance:
+    row_patterns:
+      - '^(?:ρc|pc|p_c|桩端阻力)'
+
+# 下列都是“每行一个土层”的普通矩阵表，公共方法按表头别名识别列后按层号合并。
+matrix_tables:
+  - table_keywords: [承载力特征值, 各层建议值, 主要物理及工程特性指标推荐]
+    # 同类汇总表既可能是一行表头，也可能由“指标名称/单位”两行组成。
+    header_rows: [1, 2]
+    columns:
+      layer_code:
+        # “土层编号”是岩土参数推荐表中的常见表头；层号列用于将表格参数
+        # 精确合并到正文识别出的同一土层，优先级高于可能存在括号差异的名称。
+        header_patterns: ['(?:土层编号|地层编号|层号.*名称|指标名称.*层号|土层.*指标|^(?:层号|编号)$)']
+        transforms: [extract_layer_code]
+      layer_name:
+        header_patterns: ['(?:层号.*名称|指标名称.*层号|土层.*指标|岩土名称|土层名称|层号名称|名称)']
+        transforms: [extract_layer_name]
+      bearing_capacity:
+        type: number
+        header_patterns: ['(?:承载力特征值|fak)']
+      compression_modulus_recommended:
+        type: number
+        # 有些报告把这一列写成“压缩模量 Es（变形模量 Eo）”，数据单元格为
+        # “Eo=21.0”。公共数值解析器会读取等号后的首个数值。
+        header_patterns: ['(?:压缩模量建议值|压缩模量|变形模量|Es1-2|E[o0])']
+      gravity_density_recommended:
+        type: number
+        header_patterns: ['(?:天然密度|重力密度|天然重度|容重|γ|ρ)']
+        unit_rules:
+          - pattern: '(?:g/cm3|g/cm³|t/m3|t/m³)'
+            multiplier: 9.8
+      water_content_recommended:
+        type: number
+        header_patterns: ['(?:天然含水量|含水量|ω|w)']
+      void_ratio_recommended:
+        type: number
+        header_patterns: ['(?:天然孔隙比|孔隙比|^e$)']
+      liquid_index_recommended:
+        type: number
+        header_patterns: ['(?:液性指数|IL|Ⅱ)']
+      cohesion_recommended:
+        type: number
+        header_patterns: ['(?:黏聚力|粘聚力|内聚力|ck|cq|^c$)']
+      friction_angle_recommended:
+        type: number
+        header_patterns: ['(?:内摩擦角|摩擦角|φ|Φ)']
+      standard_penetration_n_recommended:
+        type: number
+        header_patterns: ['(?:标贯|标准贯入|N63.5|^N$)']
+      poisson_ratio:
+        type: number
+        header_patterns: ['(?:泊松比|μ|ν)']
+
+  - table_keywords: [桩基参数, 钻孔灌注桩, 预制桩, 侧阻力标准值, 端阻力标准值]
+    header_rows: 2
+    columns:
+      layer_code:
+        # 部分报告将“土层名称”横跨前两列，必须用列序号区分层号和名称。
+        column_index: 0
+        header_patterns: ['^(?:层号|编号)$']
+        transforms: [normalize_layer_code]
+      layer_name:
+        column_index: 1
+        header_patterns: ['(?:岩土名称|土层名称|名称)']
+      cast_in_place_side_resistance:
+        type: number
+        header_patterns: ['(?:灌注桩).*(?:侧阻力|qsik)']
+      cast_in_place_tip_resistance:
+        type: number
+        header_patterns: ['(?:灌注桩).*(?:端阻力|qpk)']
+      precast_side_resistance:
+        type: number
+        header_patterns: ['(?:预制桩).*(?:侧阻力|qsik)']
+      precast_tip_resistance:
+        type: number
+        header_patterns: ['(?:预制桩).*(?:端阻力|qpk)']
+
+  # 液化判别表按层计算 N/Nr 和折减系数，同层多孔记录在公共合并流程中取最不利值。
+  - table_keywords: [液化判别, 液化指数, 临界标准贯入, 临界标贯]
+    header_rows: 2
+    merge_operators:
+      liquefaction_reduction_coefficient: minimum
+    columns:
+      layer_code:
+        header_patterns: ['^(?:层号|编号)$']
+        transforms: [normalize_layer_code]
+      liquefaction_test_depth:
+        type: number
+        header_patterns: ['(?:试验深度|土层深度|深度d)']
+      liquefaction_actual_n:
+        type: number
+        header_patterns: ['(?:实测标贯击数|实际标贯锤击数|实测击数|^N$)']
+      liquefaction_critical_n:
+        type: number
+        header_patterns: ['(?:临界标贯击数|临界标准贯入|临界击数|Ncr|Nr)']
+    derived_fields:
+      liquefaction_ratio:
+        formula:
+          operator: divide
+          left: liquefaction_actual_n
+          right: liquefaction_critical_n
+          precision: 4
+      liquefaction_reduction_coefficient:
+        default: 1.0
+        rules:
+          - when:
+              all:
+                - field: liquefaction_ratio
+                  lte: 0.6
+                - field: liquefaction_test_depth
+                  lte: 10
+            value: 0
+          - when:
+              all:
+                - field: liquefaction_ratio
+                  lte: 0.6
+                - field: liquefaction_test_depth
+                  gt: 10
+            value: 0.333333
+          - when:
+              all:
+                - field: liquefaction_ratio
+                  gt: 0.6
+                - field: liquefaction_ratio
+                  lte: 0.8
+                - field: liquefaction_test_depth
+                  lte: 10
+            value: 0.333333
+          - when:
+              all:
+                - field: liquefaction_ratio
+                  gt: 0.6
+                - field: liquefaction_ratio
+                  lte: 0.8
+                - field: liquefaction_test_depth
+                  gt: 10
+            value: 0.666667
+          - when:
+              all:
+                - field: liquefaction_ratio
+                  gt: 0.8
+                - field: liquefaction_ratio
+                  lte: 1.0
+                - field: liquefaction_test_depth
+                  lte: 10
+            value: 0.666667
+          - when:
+              all:
+                - field: liquefaction_ratio
+                  gt: 0.8
+                - field: liquefaction_ratio
+                  lte: 1.0
+                - field: liquefaction_test_depth
+                  gt: 10
+            value: 1.0
+
+  # 报告明确给出负摩阻系数时优先采用原表；没有时再使用后面的默认规则。
+  - table_keywords: [负摩阻, 负摩擦]
+    header_rows: 2
+    columns:
+      layer_code:
+        header_patterns: ['^(?:层号|编号)$']
+        transforms: [normalize_layer_code]
+      negative_friction_precast:
+        type: number
+        header_patterns: ['(?:预制桩).*(?:负摩阻|负摩擦)']
+      negative_friction_cast_in_place:
+        type: number
+        header_patterns: ['(?:灌注桩).*(?:负摩阻|负摩擦)']
+    compose_fields:
+      negative_friction_coefficient:
+        precast: negative_friction_precast
+        cast_in_place: negative_friction_cast_in_place
+
+# 公式与条件均由公共规则执行器处理，项目规则调整时只修改这里。
+derived_fields:
+  water_ratio:
+    formula:
+      operator: divide
+      left: water_content
+      right: liquid_limit
+      precision: 3
+
+  # 原文统计表和推荐值表均无参数时，按土类型采用需求给定的缺省值。
+  # 规则按顺序首条命中，因此淤泥、红黏土和风化岩等具体类型必须在前。
+  cohesion:
+    only_when_missing: true
+    only_when_all_missing: [cohesion, cohesion_recommended]
+    source_label: 土类型缺省规则
+    rules:
+      - when:
+          field: layer_name
+          contains_any: [淤泥]
+        value: 10
+      - when:
+          field: layer_name
+          contains_any: [红黏土, 红粘土]
+        value: 55
+      - when:
+          field: layer_name
+          contains_any: [全风化花岗岩]
+        value: 28
+      - when:
+          field: layer_name
+          contains_any: [强风化花岗岩]
+        value: 30
+      - when:
+          field: layer_name
+          contains_any: [中风化]
+        value: 100
+      - when:
+          field: layer_name
+          contains_any: [粗砂, 中砂]
+        value: 2
+      - when:
+          field: layer_name
+          contains_any: [细砂, 粉砂]
+        value: 6
+      - when:
+          field: layer_name
+          contains_any: [黏土, 粘土, 黏性土, 粘性土]
+        value: 30
+
+  friction_angle:
+    only_when_missing: true
+    only_when_all_missing: [friction_angle, friction_angle_recommended]
+    source_label: 土类型缺省规则
+    rules:
+      - when:
+          field: layer_name
+          contains_any: [淤泥]
+        value: 7
+      - when:
+          field: layer_name
+          contains_any: [红黏土, 红粘土]
+        value: 8
+      - when:
+          field: layer_name
+          contains_any: [全风化花岗岩]
+        value: 20
+      - when:
+          field: layer_name
+          contains_any: [强风化花岗岩]
+        value: 25
+      - when:
+          field: layer_name
+          contains_any: [中风化]
+        value: 30
+      - when:
+          field: layer_name
+          contains_any: [粗砂, 中砂]
+        value: 35
+      - when:
+          field: layer_name
+          contains_any: [细砂, 粉砂]
+        value: 32
+      - when:
+          field: layer_name
+          contains_any: [黏土, 粘土, 黏性土, 粘性土]
+        value: 18
+
+  compression_modulus:
+    only_when_missing: true
+    only_when_all_missing: [compression_modulus, compression_modulus_recommended]
+    source_label: 土类型缺省规则
+    rules:
+      - when:
+          field: layer_name
+          contains_any: [淤泥]
+        value: 3
+      - when:
+          field: layer_name
+          contains_any: [红黏土, 红粘土]
+        value: 15
+      - when:
+          field: layer_name
+          contains_any: [全风化花岗岩]
+        value: 6
+      - when:
+          field: layer_name
+          contains_any: [强风化花岗岩]
+        value: 30
+      - when:
+          field: layer_name
+          contains_any: [中风化]
+        value: 1000
+      - when:
+          field: layer_name
+          contains_any: [粗砂, 中砂]
+        value: 30
+      - when:
+          field: layer_name
+          contains_any: [细砂, 粉砂]
+        value: 15
+      - when:
+          field: layer_name
+          contains_any: [黏土, 粘土, 黏性土, 粘性土]
+        value: 8
+
+  poisson_ratio:
+    only_when_missing: true
+    default: 0.35
+    rules:
+      - when:
+          field: layer_name
+          contains_any: [石, 砂]
+        value: 0.25
+
+  width_bearing_coefficient:
+    default: 0
+    rules:
+      - when:
+          field: layer_name
+          contains_any: [中砂, 粗砂, 砾砂, 碎石, 岩]
+        value: 3.0
+      - when:
+          field: layer_name
+          contains_any: [粉砂, 细砂]
+        value: 2.0
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [粉土]
+            - field: clay_content
+              lt: 10
+        value: 0.5
+      - when:
+          field: layer_name
+          contains_any: [粉土]
+        value: 0.3
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [红黏土, 红粘土]
+            - field: water_ratio
+              lte: 0.8
+        value: 0.15
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [黏土, 粘土]
+            - field: void_ratio
+              lt: 0.85
+            - field: liquid_index
+              lt: 0.85
+        value: 0.3
+
+  depth_bearing_coefficient:
+    default: 1.0
+    rules:
+      - when:
+          field: layer_name
+          contains_any: [中砂, 粗砂, 砾砂, 碎石, 岩]
+        value: 4.4
+      - when:
+          field: layer_name
+          contains_any: [粉砂, 细砂]
+        value: 3.0
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [粉土]
+            - field: clay_content
+              lt: 10
+        value: 2.0
+      - when:
+          field: layer_name
+          contains_any: [粉土]
+        value: 1.5
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [红黏土, 红粘土]
+            - field: water_ratio
+              gt: 0.8
+        value: 1.2
+      - when:
+          field: layer_name
+          contains_any: [红黏土, 红粘土]
+        value: 1.4
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [黏土, 粘土]
+            - field: void_ratio
+              lt: 0.85
+            - field: liquid_index
+              lt: 0.85
+        value: 1.6
+
+  seismic_bearing_coefficient:
+    default: 1.0
+    rules:
+      - when:
+          field: layer_name
+          contains_any: [岩]
+        value: 1.5
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [碎石, 卵石, 圆砾, 角砾]
+            - field: standard_penetration_n
+              gt: 20
+        value: 1.5
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [砾砂, 粗砂, 中砂]
+            - field: standard_penetration_n
+              gt: 30
+        value: 1.5
+      - when:
+          field: bearing_capacity
+          gt: 300
+        value: 1.5
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [碎石, 卵石, 圆砾, 角砾]
+            - field: standard_penetration_n
+              gt: 10
+            - field: standard_penetration_n
+              lte: 20
+        value: 1.3
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [砾砂, 粗砂, 中砂]
+            - field: standard_penetration_n
+              gt: 15
+            - field: standard_penetration_n
+              lte: 30
+        value: 1.3
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [粉砂, 细砂]
+            - field: standard_penetration_n
+              gt: 15
+        value: 1.3
+      - when:
+          all:
+            - field: bearing_capacity
+              gte: 150
+            - field: bearing_capacity
+              lt: 300
+        value: 1.3
+      - when:
+          all:
+            - field: bearing_capacity
+              gte: 100
+            - field: bearing_capacity
+              lt: 150
+        value: 1.1
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [粉砂, 细砂]
+            - field: standard_penetration_n
+              gt: 10
+            - field: standard_penetration_n
+              lte: 15
+        value: 1.1
+
+  uplift_coefficient:
+    only_when_missing: true
+    default: 0.7
+
+  side_resistance_size_effect:
+    only_when_missing: true
+    default: 1.0
+
+  tip_resistance_size_effect:
+    only_when_missing: true
+    default: 1.0
+
+  negative_friction_coefficient:
+    only_when_missing: true
+    default:
+      precast: 0
+      cast_in_place: 0
+    rules:
+      - when:
+          field: layer_name
+          contains_any: [湿陷性黄土]
+        value:
+          precast: 0.2
+          cast_in_place: 0.35
+      - when:
+          field: layer_name
+          contains_any: [淤泥]
+        value:
+          precast: 0.15
+          cast_in_place: 0.25
+
+  # 规则层保留两套候选值；生成 result 和 callback 时按每层名称自动选择：
+  # 名称含“岩”或“石”使用灌注桩值，其余使用预制桩值。
+  horizontal_resistance_coefficient:
+    only_when_missing: true
+    rules:
+      - when:
+          field: layer_name
+          contains_any: [淤泥, 饱和湿陷性黄土]
+        value:
+          precast: 3500
+          cast_in_place: 4000
+      - when:
+          field: layer_name
+          contains_any: [填土]
+        value:
+          precast: 5000
+          cast_in_place: 8000
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [黏土, 粘土, 黏性土, 粘性土, 湿陷性黄土]
+            - field: liquid_index
+              gt: 0.75
+        value:
+          precast: 5000
+          cast_in_place: 8000
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [黏土, 粘土, 黏性土, 粘性土, 湿陷性黄土]
+            - field: liquid_index
+              gt: 0.25
+            - field: liquid_index
+              lte: 0.75
+        value:
+          precast: 8000
+          cast_in_place: 20000
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [黏土, 粘土, 黏性土, 粘性土, 湿陷性黄土]
+            - field: liquid_index
+              lte: 0.25
+        value:
+          precast: 15000
+          cast_in_place: 50000
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [粉砂, 细砂]
+            - field: standard_penetration_n
+              lte: 10
+        value:
+          precast: 5000
+          cast_in_place: 8000
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [粉砂, 细砂]
+            - field: standard_penetration_n
+              gt: 10
+            - field: standard_penetration_n
+              lte: 15
+        value:
+          precast: 8000
+          cast_in_place: 20000
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [粉砂, 细砂]
+            - field: standard_penetration_n
+              gt: 15
+        value:
+          precast: 15000
+          cast_in_place: 50000
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [粉土]
+            - field: void_ratio
+              gt: 0.9
+        value:
+          precast: 5000
+          cast_in_place: 8000
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [粉土]
+            - field: void_ratio
+              gt: 0.75
+            - field: void_ratio
+              lte: 0.9
+        value:
+          precast: 8000
+          cast_in_place: 20000
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [粉土]
+            - field: void_ratio
+              lte: 0.75
+        value:
+          precast: 15000
+          cast_in_place: 50000
+      - when:
+          all:
+            - field: layer_name
+              contains_any: [砾砂, 碎石, 岩]
+            - field: standard_penetration_n
+              gt: 15
+        value:
+          precast: null
+          cast_in_place: 250000
+
+# 每个完整层号都保留；同一层号有多个观测时才合并。
+# 厚度优先使用原文平均厚度，没有平均值时再使用最大揭露厚度。
+selection:
+  group_by: layer_code
+  sort: layer_code
+  value_priority:
+    - thickness_average
+    - maximum_exposed
+    - thickness_exact
+    - thickness_max
+    - image_average
+    - image_thickness
+  operator: minimum
+
+# 按当前业务约定，最后一个主层的最终厚度增加 20m；原始值仍然保留。
+postprocess:
+  last_group_add: 20
+  # 仅对“未揭穿/最大揭露厚度”的末层增加计算深度，完整层厚不得加20m。
+  last_group_add_fields: [maximum_exposed, image_average, image_thickness]
+  foundation_exclude_names: [耕土]

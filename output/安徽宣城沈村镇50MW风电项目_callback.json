@@ -1,0 +1,53 @@
+{
+  "bearingStratumInfo": "拟建风电场地稳定性较好,基础持力层均在同一地质单元上,属均匀地基,适宜本工程建设。\n拟建风电场场地稳定性较好,基础持力层均在同一地质单元上,属均匀地基,适宜本工程建设。\n建议采用浅基础风机位置以②层全风化砂砾岩为基础持力层,升压站位置以②层全风化砂砾岩层为基础持力层。",
+  "conclusion": "及建议\n在本勘察区内未发现有活动性断裂通过，本次勘察深度范围内未见溶洞，处在区域相对稳定地区。场地无不良地质作用。属抗震一般地段，本场地处于同一地貌、地质单元，岩土沉积稳定，工程地质条件良好。拟建风电场场地稳定性较好，基础持力层均在同一地质单元上，属均匀地基，适宜本工程建设。\n建议采用浅基础风机位置以②层全风化砂砾岩为基础持力层，升压站位置以②层全风化砂砾岩层为基础持力层。\n本区标准冻结深度为0.20米。\n本区基本地震烈度为Ⅵ度，地震设防烈度可按Ⅵ度考虑，峰值加速度为0.05g，反应谱特征周期为0.35s，设计地震分组为第一组。\n据临区土的易溶盐分析资料，本区砂砾岩对各种类型混凝土结构具微腐蚀性，对混凝土结构中的钢筋具有微腐蚀性。",
+  "earthquakeGroup": "第一组",
+  "epa": 0.05,
+  "evaluation": "据区域地质资料和本次勘察结果分析，拟建场地场区内未发现有活动性断裂通过，本次勘察深度范围内未见溶洞，处在区域相对稳定地区。场地无不良地质作用。属抗震一般地段，本场地处于同一地貌、地质单元，岩土沉积稳定，工程地质条件良好。拟建风电场地稳定性较好，基础持力层均在同一地质单元上，属均匀地基，适宜本工程建设。",
+  "geologyRockSoilsReq": [
+    {
+      "bearingCapacity": 230.0,
+      "compressionModulus": 21.0,
+      "correctionFactorDeepBearCapacity": 4.4,
+      "correctionSeismicBearCapacityFoundation": 1.5,
+      "endEffectCoefficientLateralResistance": 1.0,
+      "gravityDensity": 20.0,
+      "pullOutCoefficient": 0.7,
+      "sizeEffectCoefficientLateralResistance": 1.0,
+      "thickness": 9.6,
+      "widthBearCapacityCorrectionFactor": 3.0,
+      "geologyId": 0,
+      "id": 0,
+      "name": "②砂砾岩(全风化)",
+      "negativeFrictionResistanceCoefficient": 0,
+      "poissonRatio": "0.25"
+    },
+    {
+      "bearingCapacity": 380.0,
+      "compressionModulus": 35.0,
+      "correctionFactorDeepBearCapacity": 4.4,
+      "correctionSeismicBearCapacityFoundation": 1.5,
+      "endEffectCoefficientLateralResistance": 1.0,
+      "gravityDensity": 23.0,
+      "pullOutCoefficient": 0.7,
+      "sizeEffectCoefficientLateralResistance": 1.0,
+      "thickness": 27.5,
+      "widthBearCapacityCorrectionFactor": 3.0,
+      "geologyId": 0,
+      "id": 0,
+      "name": "③砂砾岩(强风化)",
+      "negativeFrictionResistanceCoefficient": 0,
+      "poissonRatio": "0.25"
+    }
+  ],
+  "handleKeyword": 0,
+  "ld": 6,
+  "regionalGeologyConditionEvaluation": "据区域地质资料和本次勘察结果分析，拟建场地场区内未发现有活动性断裂通过，本次勘察深度范围内未见溶洞，处在区域相对稳定地区。场地无不良地质作用。属抗震一般地段，本场地处于同一地貌、地质单元，岩土沉积稳定，工程地质条件良好。拟建风电场地稳定性较好，基础持力层均在同一地质单元上，属均匀地基，适宜本工程建设。",
+  "regionalHydrologyInfo": "宣城市地属中亚热带北缘气候，四季分明，气候温和，雨量适中，年平均气温16.3℃，最高月平均气温28.3℃，最低月平均气温2.9℃。多年平均降雨量1317.5mm。多年平均蒸发量为1055.11mm。\n辖区内河系发育，分属长江水系河钱塘江水系，主要河流有清弋江、水阳江、郎川河、徽水河，华阳河、东津河、西津河、杨之河等。天然湖泊有南漪河及固城河，总面积约200平方公里。",
+  "siteClassification": "Ⅱ",
+  "tg": 0.35,
+  "waterSoilErosion": 0,
+  "geologyId": 0,
+  "projectId": 0,
+  "regionalGeologyInfo": "宣城市地处江南过渡带，北连沿江成矿带，南接江南造山带，区内北东向、北北东向和近东西向构造发育，中生代岩浆岩分布广泛。本区大地构造单元可划分为宣城断陷盆地、江南过渡带、皖浙赣断裂带三大构造区。\n区内断裂构造较发育，主要为北东向和西北向，规模不等，性质各异，其中以江南深断裂、周王深断裂、虎（岭关）一月（潭）深断裂为最重要的主干深断裂。"
+}

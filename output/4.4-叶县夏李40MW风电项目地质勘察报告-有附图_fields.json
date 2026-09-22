@@ -1,0 +1,255 @@
+{
+  "schema_version": "1.0",
+  "result_file": "4.4-叶县夏李40MW风电项目地质勘察报告-有附图.json",
+  "description": "精简业务结果字段说明。result.json不输出空值，候选、页码和置信度请查看details.json。",
+  "fields": {
+    "geotechnical_layer_parameters": {
+      "type": "array<object>",
+      "description": "岩土层厚度、物理力学指标和承载力参数。",
+      "item_fields": {
+        "layer_code": {
+          "type": "string",
+          "description": "规范化土层编号，例如②-1。"
+        },
+        "layer_name": {
+          "type": "string",
+          "description": "岩土名称，例如粉土、粉质黏土。"
+        },
+        "geological_age": {
+          "type": "string",
+          "description": "地质年代或成因代号，例如Q4 al。"
+        },
+        "boreholes": {
+          "type": "array<object>",
+          "description": "该土层在不同钻孔中的实际观测数据；报告没有钻孔柱状图时不输出。",
+          "item_fields": {
+            "borehole_id": {
+              "type": "string",
+              "description": "钻孔编号。"
+            },
+            "thickness": {
+              "type": "number",
+              "unit": "m",
+              "description": "该钻孔中本层厚度。"
+            },
+            "bottom_depth": {
+              "type": "number",
+              "unit": "m",
+              "description": "该钻孔中本层层底深度。"
+            },
+            "bottom_elevation": {
+              "type": "number",
+              "unit": "m",
+              "description": "该钻孔中本层层底标高。"
+            }
+          }
+        },
+        "thickness_range": {
+          "type": "object",
+          "description": "正文给出的层厚范围。",
+          "fields": {
+            "min": {
+              "type": "number",
+              "unit": "m",
+              "description": "最小层厚。"
+            },
+            "max": {
+              "type": "number",
+              "unit": "m",
+              "description": "最大层厚。"
+            },
+            "unit": {
+              "type": "string",
+              "description": "厚度单位，当前为m。"
+            }
+          }
+        },
+        "average_thickness": {
+          "type": "number",
+          "unit": "m",
+          "description": "原文明确给出的平均层厚。"
+        },
+        "maximum_exposed_thickness": {
+          "type": "number",
+          "unit": "m",
+          "description": "未揭穿土层的最大揭露厚度。"
+        },
+        "thickness": {
+          "type": "number",
+          "unit": "m",
+          "description": "按需求规则得到的最终业务厚度；末层可能已增加20m。"
+        },
+        "unit": {
+          "type": "string",
+          "description": "当前土层厚度字段的单位。"
+        },
+        "gravity_density": {
+          "type": "number",
+          "unit": "kN/m³",
+          "description": "天然重度或重力密度γ。"
+        },
+        "cohesion": {
+          "type": "number",
+          "unit": "kPa",
+          "description": "黏聚力或内聚力C。"
+        },
+        "friction_angle": {
+          "type": "number",
+          "unit": "度",
+          "description": "内摩擦角或摩擦角Φ。"
+        },
+        "compression_modulus_es1_2": {
+          "type": "number",
+          "unit": "MPa",
+          "description": "压缩模量Es1-2。"
+        },
+        "side_friction_fs": {
+          "type": "number",
+          "unit": "kPa",
+          "description": "侧摩阻力fs平均值。"
+        },
+        "pile_tip_resistance_rho_c": {
+          "type": "number",
+          "description": "需求定义的桩端阻力ρc平均值。"
+        },
+        "poisson_ratio": {
+          "type": "number",
+          "description": "泊松比；原文缺失时按需求规则赋值。"
+        },
+        "bearing_capacity_fak": {
+          "type": "number",
+          "unit": "kPa",
+          "description": "地基承载力特征值fak。"
+        },
+        "width_bearing_coefficient_eta_b": {
+          "type": "number",
+          "description": "地基承载力宽度修正系数ηb。"
+        },
+        "depth_bearing_coefficient_eta_d": {
+          "type": "number",
+          "description": "地基承载力深度修正系数ηd。"
+        },
+        "seismic_bearing_coefficient_zeta_a": {
+          "type": "number",
+          "description": "地基抗震承载力调整系数ζa。"
+        },
+        "liquefaction_reduction_coefficient": {
+          "type": "number",
+          "description": "液化土层承载力折减系数；无液化时为1。"
+        },
+        "horizontal_resistance_coefficient": {
+          "type": "number",
+          "description": "按土层名称自动选择的水平抗力比例系数m。"
+        },
+        "uplift_coefficient": {
+          "type": "number",
+          "description": "抗拔系数。"
+        },
+        "side_resistance_size_effect": {
+          "type": "number",
+          "description": "桩侧阻力尺寸效应系数。"
+        },
+        "tip_resistance_size_effect": {
+          "type": "number",
+          "description": "桩端阻力尺寸效应系数。"
+        },
+        "negative_friction_coefficient": {
+          "type": "number",
+          "description": "按土层名称自动选择的负摩阻力系数。"
+        },
+        "pile_side_resistance": {
+          "type": "number",
+          "unit": "kPa",
+          "description": "按该层自动判断的基础形式得到的桩侧阻力。"
+        },
+        "pile_tip_resistance": {
+          "type": "number",
+          "unit": "kPa",
+          "description": "按该层自动判断的基础形式得到的桩端阻力。"
+        }
+      }
+    },
+    "seismic_parameters": {
+      "type": "object",
+      "description": "地震作用及场地类别参数。",
+      "fields": {
+        "peak_ground_acceleration_g": {
+          "type": "number",
+          "unit": "g",
+          "description": "设计地震动峰值加速度。"
+        },
+        "basic_seismic_intensity_degree": {
+          "type": "number",
+          "unit": "度",
+          "description": "抗震设防烈度或地震基本烈度。"
+        },
+        "response_spectrum_characteristic_period_s": {
+          "type": "number",
+          "unit": "s",
+          "description": "地震动加速度反应谱特征周期。"
+        },
+        "site_category": {
+          "type": "string|array<string>",
+          "description": "建筑场地类别。"
+        },
+        "design_earthquake_group": {
+          "type": "string",
+          "description": "设计地震分组。"
+        },
+        "liquefaction_status": {
+          "type": "string",
+          "description": "场地液化判定结论。"
+        }
+      }
+    },
+    "key_data": {
+      "type": "object",
+      "description": "水土腐蚀性、地基处理、持力层和地下水等关键数据。",
+      "fields": {
+        "water_soil_corrosion": {
+          "type": "string",
+          "description": "地下水或地基土腐蚀性结论。"
+        },
+        "foundation_treatment": {
+          "type": "array<string>",
+          "description": "地基处理相关结论。"
+        },
+        "bearing_layer_description": {
+          "type": "array<string>",
+          "description": "建议持力层及相关描述。"
+        },
+        "groundwater_depth_m": {
+          "type": "number|object",
+          "unit": "m",
+          "description": "地下水稳定水位埋深或埋深范围。"
+        }
+      }
+    },
+    "draft_content": {
+      "type": "object<string,string|null>",
+      "description": "以源报告真实章节标题为key、章节正文为value的文字稿内容。"
+    },
+    "site_geological_conditions_and_evaluation": {
+      "type": "object",
+      "description": "场区工程地质条件及稳定性评价。",
+      "fields": {
+        "conditions": {
+          "type": "string",
+          "description": "场区工程地质条件正文。"
+        },
+        "evaluation": {
+          "type": "string",
+          "description": "场地稳定性或适宜性评价正文。"
+        }
+      }
+    },
+    "regional_hydrology": {
+      "type": "string",
+      "description": "区域水文、水系或水文气象正文。"
+    },
+    "conclusion_and_evaluation": {
+      "type": "string",
+      "description": "报告结论与评价正文。"
+    }
+  }
+}

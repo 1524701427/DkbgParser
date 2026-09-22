@@ -1,0 +1,171 @@
+name: report_fields
+version: "1.0"
+mode: keyword_fields
+
+# PRD 要求优先从结论类章节抽取，未命中再扫描全文。
+search:
+  priority_section_aliases:
+    - 结论与建议
+    - 结论与评价
+    - 结论
+    - 建议
+    - 评价
+  fallback_whole_document: true
+
+fields:
+  seismic_peak_acceleration:
+    keywords: [基本地震动峰值加速度, 地震动峰值加速度, 地震峰值加速度, 峰值加速度]
+    patterns:
+      - '(?:基本地震动峰值加速度|地震动峰值加速度值|地震动峰值加速度|地震峰值加速度|峰值加速度(?!调整系数))(?![^。；;]{0,12}(?:小于|大于|不小于|不大于|[<>≤≥])).{0,20}?(?P<value>\d+(?:\.\d+)?)\s*g'
+    type: number
+    minimum: 0
+    maximum: 15
+    # 优先采用报告明确给出的“基本值”，避免把稳定性评价中的分档区间
+    # （例如 a＜0.09g）误当成项目地震动峰值加速度。
+    prefer_context_keywords: [基本地震动峰值加速度, 地震动峰值加速度值为]
+    selection: maximum
+
+  seismic_intensity:
+    keywords: [地震基本烈度, 抗震设防烈度, 地震烈度]
+    patterns:
+      - '(?:地震基本烈度|抗震设防烈度|地震烈度).{0,20}?(?P<value>Ⅵ|Ⅶ|Ⅷ|Ⅸ|Ⅹ|六|七|八|九|十|[6-9]|10)\s*度'
+    value_map:
+      Ⅵ: 6
+      Ⅶ: 7
+      Ⅷ: 8
+      Ⅸ: 9
+      Ⅹ: 10
+      六: 6
+      七: 7
+      八: 8
+      九: 9
+      "6": 6
+      "7": 7
+      "8": 8
+      "9": 9
+      "10": 10
+    prefer_context_keywords: [场地类别]
+    selection: maximum
+
+  characteristic_period:
+    keywords: [地震动反应谱特征周期, 反应谱特征周期, 场地特征周期]
+    patterns:
+      - '(?:地震动反应谱特征周期|反应谱特征周期|场地特征周期).{0,20}?(?P<value>\d+(?:\.\d+)?)\s*s'
+    type: number
+    minimum: 0
+    maximum: 1
+    prefer_context_keywords: [场地类别]
+    selection: maximum
+
+  site_category:
+    keywords: [场地类别, 建筑场地类别]
+    patterns:
+      - '(?:场地类别|建筑场地类别).{0,8}?(?P<value>Ⅳ|Ⅲ|Ⅱ|Ⅰ[01]?|IV|III|II|I[01]?)\s*类?'
+      # 同一句或表格中可能列出多个类别，后续值前不再重复“场地类别”。
+      - '(?P<value>Ⅳ|Ⅲ|Ⅱ|Ⅰ[01]?|IV|III|II|I[01]?)(?=\s*(?:类|[、,，]))'
+    strip_spaces: true
+    value_map:
+      I0: Ⅰ0
+      I1: Ⅰ1
+      II: Ⅱ
+      III: Ⅲ
+      IV: Ⅳ
+      Ⅰ: Ⅰ
+      Ⅰ0: Ⅰ0
+      Ⅰ1: Ⅰ1
+      Ⅱ: Ⅱ
+      Ⅲ: Ⅲ
+      Ⅳ: Ⅳ
+    prefer_context_keywords: [场地类别]
+    selection: all_or_single
+
+  earthquake_group:
+    keywords: [设计地震分组, 地震分组]
+    patterns:
+      - '(?:设计地震分组|地震分组).{0,12}?(?P<value>第一组|第二组|第三组)'
+    prefer_context_keywords: [场地类别]
+    selection: severity_maximum
+    severity_order: [第一组, 第二组, 第三组]
+
+  corrosion:
+    keywords: [腐蚀, 腐蚀性]
+    patterns:
+      - '(?P<value>微|弱|中|强)(?:腐蚀性|腐蚀)'
+    value_map:
+      微: 微腐蚀性
+      弱: 弱腐蚀性
+      中: 中强腐蚀性
+      强: 中强腐蚀性
+    selection: severity_maximum
+    severity_order: [微腐蚀性, 弱腐蚀性, 中强腐蚀性]
+
+  foundation_treatment:
+    keywords: [湿陷性黄土, 岩溶, 溶岩]
+    # 任务要求经版面解析后可能跨两个内容块，排除规则需要连同上一块判断。
+    exclude_previous_blocks: 1
+    negative_prefixes: [不存在, 无, 没有, 未揭露, 未发现, 不具, 不属于]
+    negative_window: 5
+    # 规范名称只是引用依据，不代表场地存在湿陷性黄土。
+    exclude_patterns:
+      - '湿陷性黄土地区(?:建筑)?规范'
+      # 勘察任务书常把多种潜在灾害并列为“查清/调查是否存在”的工作要求，
+      # 这种条件性列举不代表项目场地实际存在湿陷性黄土。
+      - '(?:查清|调查|勘察|判明|核实|是否|有无).{0,100}湿陷性黄土'
+      - '湿陷性黄土.{0,30}(?:若有|如有|是否存在|进行勘察|提出防治)'
+    patterns:
+      - '(?P<value>湿陷性.{0,10}黄土|黄土.{0,10}湿陷性)(?:.{0,15}?(?:埋深|深度).{0,5}?\d+(?:\.\d+)?\s*(?:m|米))?'
+      - '(?P<value>岩溶|溶岩)'
+    transforms: [normalize_foundation_treatment]
+    selection: all
+
+  liquefaction_status:
+    keywords: [液化]
+    patterns:
+      - '(?P<value>可不考虑地震液化和震陷问题)'
+      - '(?P<value>可不考虑地震液化问题)'
+      - '(?P<value>可不考虑液化问题)'
+      - '(?P<value>不具液化性|不存在液化问题|无液化问题|不液化|未液化)'
+      - '(?P<value>不存在地震液化问题)'
+      - '(?P<value>存在液化|具有液化性|具液化性|液化土层)'
+    value_map:
+      可不考虑地震液化和震陷问题: no_liquefaction
+      可不考虑地震液化问题: no_liquefaction
+      可不考虑液化问题: no_liquefaction
+      不具液化性: no_liquefaction
+      不存在液化问题: no_liquefaction
+      不存在地震液化问题: no_liquefaction
+      无液化问题: no_liquefaction
+      不液化: no_liquefaction
+      未液化: no_liquefaction
+      存在液化: liquefaction
+      具有液化性: liquefaction
+      具液化性: liquefaction
+      液化土层: liquefaction
+    selection: severity_maximum
+    severity_order: [liquefaction, no_liquefaction]
+
+  bearing_layer_description:
+    keywords: [持力层, 地基方案, 地基处理方案]
+    negative_prefixes: [不存在, 无, 没有]
+    negative_window: 5
+    block_kinds: [paragraph, list_item]
+    exclude_patterns:
+      - '不得作为.{0,10}持力层'
+      - '提出.{0,15}(?:持力层|地基方案)'
+      - '持力层.{0,10}(?:检验|保护|扰动)'
+      - '边坡.{0,30}持力层'
+    patterns:
+      - '(?P<value>[^。；;]*(?:持力层|地基方案|地基处理方案)[^。；;]*[。；;]?)'
+    strip_numbering: true
+    require_terminal_punctuation: true
+    deduplicate_contained: true
+    selection: all
+
+  groundwater_depth:
+    keywords: [地下水水位埋深, 地下水埋深, 地下水稳定水位埋深, 场区水位埋深, 水位埋深]
+    patterns:
+      - '(?:地下水水位埋深|地下水埋深|地下水稳定水位埋深|场区水位埋深|水位埋深).{0,20}?(?P<value>\d+(?:\.\d+)?\s*(?:m|米)?\s*[~～至-]\s*\d+(?:\.\d+)?\s*(?:m|米))'
+      - '(?:地下水水位埋深|地下水埋深|地下水稳定水位埋深|场区水位埋深|水位埋深).{0,20}?(?P<value>\d+(?:\.\d+)?\s*(?:m|米))'
+    type: range
+    first_matching_pattern: true
+    selection: start_maximum

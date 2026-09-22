@@ -1,0 +1,169 @@
+name: report_sections
+version: "1.1"
+mode: section_content
+
+# PRD 2.2.5“文字稿内容提取”。outline_path 是生成文字稿时的目标层级。
+# 百度搜索暂不执行，只在 JSON 中保留明确占位。
+sections:
+  - key: hydro_meteorology
+    output_title: 水文气象
+    outline_path: [2, 1, 1]
+    aliases: [气象水文, 气象、水文, 水文、气象, 气候气象, 气候、气象, 区域水文, 水文气象]
+    include_tables: true
+    include_images: true
+    placeholder:
+      type: external_search
+      provider: baidu
+      status: not_implemented
+      query_template: "${project_county_or_city} 水文气象"
+      message: 报告未找到对应章节，百度搜索暂未实现
+
+  - key: regional_terrain
+    output_title: 区域地形地貌
+    outline_path: [2, 1, 2]
+    aliases: [区域地形地貌, 地形地貌, 地形、地貌, 场地位置、地形及地貌, 场地位置地形及地貌]
+    include_tables: true
+    include_images: true
+    placeholder:
+      type: external_search
+      provider: baidu
+      status: not_implemented
+      query_template: "${project_county_or_city} 地形地貌 海拔"
+      output_template: "本项目位于${project_township_areas}，地形地貌上属${project_farm_terrain}，海拔标高一般在${project_field_elevation_range}之间。"
+      message: 报告未找到对应章节，百度搜索暂未实现
+
+  - key: regional_geological_structure
+    output_title: 区域地质构造
+    outline_path: [2, 1, 3]
+    aliases: [区域地质构造, 构造地质条件, 区域地质, 区域稳定, 地质构造]
+    include_tables: true
+    include_images: false
+    placeholder:
+      type: local_corpus_lookup
+      status: not_implemented
+      query_template: "同县域 区域地质构造 ${project_county}"
+      message: 报告未找到对应章节，预留同县域报告检索；仍无内容时删除本节
+
+  - key: stratigraphic_lithology
+    output_title: 地层岩性
+    outline_path: [2, 1, 4]
+    aliases: [地层岩性, 场地地层结构及岩土物理力学性质, 地层岩性分布特征, 地层]
+    include_tables: true
+    include_images: true
+    placeholder: &document_missing
+      type: document_missing
+      status: pending_review
+      message: 报告未找到对应章节，等待人工复核
+
+  - key: groundwater_conditions
+    output_title: 地下水条件
+    outline_path: [2, 1, 5]
+    # 优先报告中更具体的“地下水条件”；只有没有该标题时，才回退到范围
+    # 更大的“水文地质条件”，避免把区域水文地质误选为场地地下水章节。
+    alias_groups:
+      - [地下水条件, 地下水特征]
+    fallback_aliases: [水文地质条件]
+    include_tables: true
+    include_images: true
+    placeholder: *document_missing
+
+  - key: soil_corrosion_evaluation
+    output_title: 场地土的腐蚀性评价
+    outline_path: [3, 2, 1]
+    aliases: [场地土的腐蚀性评价, 地基土腐蚀性评价, 地基土的腐蚀性评价, 土的腐蚀性评价, 土腐蚀性评价, 地下水及地基土的腐蚀性, 水、土壤对建筑材料腐蚀性评价, 水和土壤对建筑材料腐蚀性评价]
+    include_tables: true
+    include_images: true
+    placeholder: *document_missing
+
+  - key: adverse_geology
+    output_title: 不良地质现象及地质灾害
+    outline_path: [3, 2, 2]
+    aliases: [不良地质作用及特殊性岩土, 不良地质作用, 特殊性岩土, 不良地质现象, 地质灾害]
+    # 没有独立标题时，稳定性评价章节通常包含明确的不良地质结论。
+    fallback_aliases: [场地的稳定性及适宜性评价, 场地稳定性及适宜性评价, 地基的稳定性和适宜性]
+    include_tables: true
+    include_images: true
+    # 工程安全结论不得凭空兜底；未命中时进入人工复核。
+    placeholder: *document_missing
+
+  - key: geotechnical_parameters
+    output_title: 岩体质量分类及岩土体物理力学参数
+    outline_path: [3, 2, 3]
+    aliases: [场地地层结构及岩土物理力学性质, 主要物理及工程特性指标推荐, 主要物理力学性质指标参考值, 地基土（岩）主要物理力学性质指标参考值, 岩土体物理力学参数, 岩体质量分类, 岩土参数统计, 岩土设计参数建议值, 土的物理力学性质, 天然地基方案]
+    # 有些简版报告把推荐参数表直接放在综合“岩土工程评价”章节下。
+    # 仅在上面的具体标题全部缺失时才采用，避免覆盖更准确的来源章节。
+    fallback_aliases: [岩土工程评价]
+    include_tables: true
+    include_images: true
+    placeholder: *document_missing
+
+  - key: site_stability_evaluation
+    output_title: 场区工程地质条件评价
+    outline_path: [3, 2, 4]
+    aliases: [场地的稳定性及适宜性评价, 场地稳定性及适宜性评价, 场地稳定性、适宜性评价, 场地稳定性评价, 场地适宜性评价, 地基的稳定性和适宜性, 稳定性及适宜性, 场地地基土的评价]
+    include_tables: true
+    include_images: true
+    # 稳定性属于安全相关结论，只能来自报告原文。
+    placeholder: *document_missing
+
+  - key: foundation_evaluation
+    output_title: 地基评价
+    outline_path: [3, 2, 5]
+    aliases: [地基基础方案概述, 地基基础方案分析, 地基基础方案, 地基方案, 地基评价, 风机基础岩土工程分析评价, 天然地基分析]
+    include_tables: true
+    include_images: true
+    placeholder: *document_missing
+
+  - key: seismic_site_division
+    output_title: 抗震地段划分
+    outline_path: [3, 3, 1]
+    alias_groups:
+      - [建筑场地抗震设防烈度, 抗震设防烈度, 地震动参数]
+      - [场地特征周期, 地震动反应谱特征周期, 地震动参数调整]
+    # 有些报告把抗震参数、场地类别及液化结论合并在一个“地震效应”节中。
+    fallback_aliases: [地震效应, 场地地震效应]
+    include_tables: true
+    include_images: true
+    placeholder: *document_missing
+
+  - key: soil_and_site_category
+    output_title: 地基土类型及场地类别
+    outline_path: [3, 3, 2]
+    aliases: [场地类别, 建筑场地类别, 地基土类型]
+    # “地基均匀性/稳定性”与土类型、场地类别不是同义项；报告没有独立
+    # 标题时，回退读取通常同时记载这些参数的“地震效应”章节。
+    fallback_aliases: [地震效应, 场地地震效应]
+    include_tables: true
+    include_images: true
+    placeholder: *document_missing
+
+  - key: seismic_action
+    output_title: 地震作用
+    outline_path: [3, 3, 3]
+    alias_groups:
+      - [地震液化, 液化判别, 场地地震效应]
+      - [地震稳定性评价, 抗震稳定性评价]
+    fallback_aliases: [地震效应, 场地地震效应]
+    include_tables: true
+    include_images: true
+    placeholder: *document_missing
+
+  # PRD 2.2.6：场区地质条件需要与“评价”部分分别输出。
+  - key: site_geological_conditions
+    output_title: 场区地质条件
+    outline_path: [2]
+    include_in_draft: false
+    aliases: [场区工程地质条件, 场地工程地质条件, 场区地质条件, 场地地质条件, 场地岩土工程条件, 场区岩土工程条件, 场地环境及工程地质条件, 场地条件]
+    include_tables: true
+    include_images: true
+    placeholder: *document_missing
+
+  - key: conclusion
+    output_title: 结论
+    outline_path: [4]
+    aliases: [结论与建议, 结论与评价, 结论]
+    include_tables: true
+    include_images: true
+    strip_numbering: true
+    stop_keywords: [附表, 附件, 附图]
+    placeholder: *document_missing

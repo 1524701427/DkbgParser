@@ -330,14 +330,17 @@ def _log_mapping_warnings(output_path: Path, callback_payload: dict) -> None:
     """
     key_data = json.loads(output_path.read_text(encoding="utf-8")).get("key_data", {})
 
-    if key_data.get("foundation_treatment") and "handleKeyword" not in callback_payload:
-        logger.warning("接口映射未写入 handleKeyword：请传入实际枚举编码")
+    if (
+        key_data.get("foundation_treatment")
+        and callback_payload.get("handleKeyword") is None
+    ):
+        logger.warning("接口映射 handleKeyword 为空：请传入实际枚举编码")
 
     if (
         "中强" in str(key_data.get("water_soil_corrosion") or "")
-        and "waterSoilErosion" not in callback_payload
+        and callback_payload.get("waterSoilErosion") is None
     ):
-        logger.warning("接口映射未写入 waterSoilErosion：请确认中腐蚀2或强腐蚀3")
+        logger.warning("接口映射 waterSoilErosion 为空：请确认中腐蚀2或强腐蚀3")
 
 
 def parse_document(

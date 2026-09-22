@@ -22,7 +22,7 @@
 `parser_engine.callback_mapping` 对外导入方式继续兼容，结构重构不要求调用方改代码。
 
 - Word：`.doc/.docx/.docm/.dot/.dotx/.rtf/.odt`，使用本地 Aspose.Words
-- PDF：默认使用本地 Aspose.PDF；可选 OpenDataLoader PDF
+- PDF：主流程默认使用 OpenDataLoader；也可切换本地 Aspose.PDF
 - 统一模型：页面、段落、标题、列表、表格、文本 span、字体样式、PDF 坐标
 - 扫描件检测：大部分页面只有图片且几乎没有文本时抛出 `ScannedPdfNotSupportedError`
 - 直接运行入口与 Python API，均可输出 UTF-8 JSON
@@ -258,14 +258,16 @@ result = engine.extract_all(document)
 - `cohesion`：黏聚力/内聚力 C，kPa；优先取原文平均值、其次取报告推荐值，均缺失时按土类型缺省规则赋值；
 - `friction_angle`：摩擦角 Φ，度；优先取原文平均值、其次取报告推荐值，均缺失时按土类型缺省规则赋值；
 - `compression_modulus_es1_2`：压缩模量 Es1-2，MPa；优先取原文平均值、其次取报告推荐值，均缺失时按土类型缺省规则赋值；
-- `side_friction_fs`：侧摩阻力 fs 平均值，kPa；
-- `pile_tip_resistance_rho_c`：按 PRD 定义提取的桩端阻力 ρc 平均值；
+- `side_friction_fs`：物理力学统计表中的 fs 平均值，kPa；
+- `clay_content`：ρc 黏粒含量，%；用于粉土相关规则判断，不作为桩端阻力；
+- `pile_side_resistance`：从桩基参数表 qsik 获取，并按当前土层名称选择对应桩型列；
+- `pile_tip_resistance`：从桩基参数表 qpk 获取，并按当前土层名称选择对应桩型列；
 - `poisson_ratio`：泊松比；
 - `bearing_capacity_fak`：承载力特征值 fak，kPa。
 - `width_bearing_coefficient_eta_b`、`depth_bearing_coefficient_eta_d`：承载力宽度、深度修正系数；
 - `seismic_bearing_coefficient_zeta_a`：地基抗震承载力调整系数；
 - `liquefaction_reduction_coefficient`：按 N/Nr 与试验深度得到的液化折减系数；
-- `cast_in_place_*`、`precast_*`：灌注桩和预制桩的侧阻力、端阻力；
+- `cast_in_place_*`、`precast_*`：从桩基参数表保留的灌注桩/预制桩候选值；最终业务值仍按当前土层名称逐层选择；
 - `horizontal_resistance_coefficient`、`negative_friction_coefficient`、`uplift_coefficient`：PRD 要求的桩基派生参数。
 
 标准贯入/动力触探击数、含水量、孔隙比、液塑限、候选值、控制钻孔编号、参数来源、
@@ -300,10 +302,11 @@ main(
 可通过 `main(callback_url=...)` 覆盖地址，`callback_timeout` 调整超时，
 本地只生成文件时可传 `send_callback=False`。
 
-完整映射关系集中在 `parser_engine/callback_mapping.py` 的
-`CALLBACK_FIELD_MAPPING` 和 `CALLBACK_LAYER_FIELD_MAPPING` 两个字典中。字典每一项
-都有中文注释，键是接口字段，值是 result.json 来源字段，修改接口字段时无需到抽取
-代码中查找。
+完整映射关系集中在 `parser_engine/callback/mapping.py` 的
+`CALLBACK_FIELD_MAPPING` 和 `CALLBACK_LAYER_FIELD_MAPPING` 两个字典中；
+HTTP POST 位于 `parser_engine/callback/client.py`。旧的
+`parser_engine/callback_mapping.py` 只作为兼容导入入口保留。映射字典每一项都有
+中文注释，键是接口字段，值是 result.json 来源字段。
 
 接口中的 `projectId`、`geologyId` 和岩土层 `id` 属于业务数据库标识，需要调用方
 在 `main.py` 配置。桩侧阻力、桩端阻力、水平抗力比例系数和负摩擦阻力系数均使用
@@ -322,13 +325,16 @@ callback JSON 默认保留完整接口字段；没有抽取到或没有映射上
 
 最后一层“识别厚度 +20m”属于后续工程计算调整：精简结果中的 `thickness` 输出调整后
 厚度；调整前值、增加值和调整后值同时保存在明细 JSON 的 `effective_value`、
-`adjustment` 和 `final_value` 中。若首层为耕土，结果仍保留该层；其基础计算排除标记和
-并入下一层后的计算厚度保存在明细 JSON 的 `foundation_excluded`、`foundation_thickness`。
+`adjustment` 和 `final_value` 中。若最终首层为“耕土”且存在下一层，业务结果会删除
+该耕土层并把其厚度合并到下一层；原始识别候选仍保留在 details.json 的 `records` 中，
+便于追溯。
 
 ### 钻孔柱状图识别
 
 图片兜底会定位低文本附图页和钻孔柱状图页，逐页识别多个钻孔，再按完整层号汇总
-最小有效厚度；随后与正文物理力学统计表、推荐值表按层号合并。页面使用 PyMuPDF
+有效厚度；具体使用 average/minimum/maximum 由 YAML 的聚合配置决定，
+`depth_validation=False` 的观测保留在明细中但不参与统计。随后再与正文物理力学
+统计表、推荐值表按层号合并。页面使用 PyMuPDF
 渲染为高清 PNG，再调用注入的识别客户端。安装图片渲染依赖：
 
 ```powershell

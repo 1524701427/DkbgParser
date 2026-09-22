@@ -311,6 +311,8 @@ matrix_tables:
     header_rows: 2
     merge_operators:
       liquefaction_reduction_coefficient: minimum
+      # 同层多个孔只要有一条判为液化，该层即按液化层处理。
+      liquefaction_is_liquefied: maximum
     columns:
       layer_code:
         header_patterns: ['^(?:层号|编号)$']
@@ -331,6 +333,19 @@ matrix_tables:
           left: liquefaction_actual_n
           right: liquefaction_critical_n
           precision: 4
+      # 液化状态与折减系数分开保存。N/Nr<=1 判为当前土层液化；
+      # 即使某个深度区间的折减系数恰好为1，也不能把该层当成无液化。
+      liquefaction_is_liquefied:
+        rules:
+          - when:
+              field: liquefaction_ratio
+              lte: 1.0
+            value: true
+          - when:
+              field: liquefaction_ratio
+              gt: 1.0
+            value: false
+
       liquefaction_reduction_coefficient:
         default: 1.0
         rules:
@@ -545,8 +560,8 @@ derived_fields:
           all:
             - field: layer_name
               contains_any: [粉砂, 细砂]
-            - field: liquefaction_reduction_coefficient
-              lt: 1
+            - field: liquefaction_is_liquefied
+              eq: true
         value: 0
       - when:
           field: layer_name
@@ -592,8 +607,8 @@ derived_fields:
           all:
             - field: layer_name
               contains_any: [粉砂, 细砂]
-            - field: liquefaction_reduction_coefficient
-              lt: 1
+            - field: liquefaction_is_liquefied
+              eq: true
         value: 1.0
       - when:
           field: layer_name

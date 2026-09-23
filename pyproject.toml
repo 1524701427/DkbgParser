@@ -11,6 +11,10 @@ dependencies = ["pythonnet>=3.0,<4", "PyYAML>=6,<7"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<9"]
+api = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.30,<1",
+]
 opendataloader = ["opendataloader-pdf"]
 image = ["PyMuPDF>=1.24,<2"]
 ocr = [
@@ -22,7 +26,7 @@ ocr = [
 ]
 
 [tool.setuptools]
-py-modules = ["main"]
+py-modules = ["main", "api"]
 
 [tool.setuptools.packages.find]
 include = ["parser_engine*"]

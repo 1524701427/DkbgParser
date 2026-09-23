@@ -47,6 +47,34 @@ main(
 python main.py
 ```
 
+### FastAPI 文件下载解析接口
+
+安装接口依赖：
+
+```powershell
+python -m pip install -e ".[api,opendataloader,ocr]"
+```
+
+启动服务：
+
+```powershell
+uvicorn api:app --host 0.0.0.0 --port 8000
+```
+
+传入文件下载链接并解析：
+
+```powershell
+curl.exe -X POST "http://127.0.0.1:8000/parse?file=https%3A%2F%2Fexample.com%2Freport.pdf&project_id=123&geology_id=456"
+```
+
+接口返回 `result`（精简业务结果）和 `callback_payload`（逆向接口字段映射）。
+下载文件、解析中间文件、日志和 OCR 图片统一放在本次请求独享的系统临时目录；
+请求成功或失败后都会自动删除。接口只接收 `file`、`project_id` 和
+`geology_id` 三个参数，其中 `file` 是 HTTP/HTTPS 下载链接，`project_id` 可以
+不传；内部固定使用 OpenDataLoader 解析 PDF、开启本地 OCR，流程完成后自动
+调用逆向地质回调接口。Swagger 文档地址为
+`http://127.0.0.1:8000/docs`，健康检查地址为 `GET /health`。
+
 每次运行同时输出控制台日志和报告独立日志：
 `output/logs/<报告名>.log`。日志会记录文档解析与业务抽取、接口字段映射、
 逆向接口 POST 三个阶段的开始、完成、耗时以及接口响应，便于定位性能和接口问题。

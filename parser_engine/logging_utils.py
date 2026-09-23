@@ -38,6 +38,42 @@ def configure_logging(log_path: str | Path | None = None) -> None:
     )
 
 
+def close_file_handlers_under(directory: str | Path) -> None:
+    """关闭指定目录下由日志系统持有的文件句柄。
+
+    FastAPI 请求使用临时输出目录。在 Windows 中，如果 ``FileHandler`` 没有
+    显式关闭，临时目录清理会因日志文件仍被占用而失败。
+
+    Args:
+        directory: 即将被删除的临时目录或其父目录。
+    """
+    root = Path(directory).resolve()
+    loggers: list[logging.Logger] = [logging.getLogger()]
+    loggers.extend(
+        item
+        for item in logging.Logger.manager.loggerDict.values()
+        if isinstance(item, logging.Logger)
+    )
+
+    # 同一个处理器可能同时挂在多个 logger 上，用 id 去重后只关闭一次。
+    closed_handlers: set[int] = set()
+    for current_logger in loggers:
+        for handler in list(current_logger.handlers):
+            if not isinstance(handler, logging.FileHandler):
+                continue
+            try:
+                log_path = Path(handler.baseFilename).resolve()
+                belongs_to_directory = log_path.is_relative_to(root)
+            except (OSError, ValueError):
+                belongs_to_directory = False
+            if not belongs_to_directory:
+                continue
+            current_logger.removeHandler(handler)
+            if id(handler) not in closed_handlers:
+                handler.close()
+                closed_handlers.add(id(handler))
+
+
 @contextmanager
 def log_stage(logger: logging.Logger, stage_name: str) -> Iterator[None]:
     """记录一个主流程阶段的开始、完成和耗时，异常时同样记录耗时。"""
